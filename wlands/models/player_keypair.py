@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from base64 import b64encode
 from datetime import datetime, timedelta
 
@@ -8,6 +10,7 @@ from tortoise import fields
 
 from wlands import models
 from ._utils import Model
+from ..config import YGGDRASIL_PRIVATE_KEY
 
 
 def expires_after_7d():
@@ -33,7 +36,7 @@ class PlayerKeyPair(Model):
         return datetime.now() > self.refreshes
 
     def generate_signature(self) -> str:
-        signer = PKCS1_v1_5.new(settings.YGGDRASIL_PRIVATE_KEY)
+        signer = PKCS1_v1_5.new(YGGDRASIL_PRIVATE_KEY)
         digest = SHA1.new()
         expiresAtMillis = int(self.expires.timestamp() * 1000)
         digest.update(

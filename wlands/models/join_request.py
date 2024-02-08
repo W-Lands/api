@@ -1,3 +1,4 @@
+from __future__ import annotations
 from tortoise import fields
 
 from wlands import models

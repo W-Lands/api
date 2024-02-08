@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 from os import urandom
 from uuid import UUID, uuid4
@@ -25,4 +27,4 @@ class GameSession(Model):
 
     @property
     def expired(self) -> bool:
-        return datetime.now() > self.expires_at
+        return datetime.now(self.expires_at.tzinfo) > self.expires_at

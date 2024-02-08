@@ -1,6 +1,8 @@
+from io import BytesIO
 from time import mktime
 from uuid import uuid4
 
+from PIL import Image
 from bcrypt import checkpw
 from fastapi import FastAPI, Depends, Response
 
@@ -64,7 +66,7 @@ async def logout(session: GameSession = Depends(sess_auth_expired)):
 
 @app.get("/auth/verify")
 async def check_session(session: GameSession = Depends(sess_auth_expired)):
-    return Response({}, 207 if session.expired else 200)
+    return Response("{}", 207 if session.expired else 200)
 
 
 @app.get("/users/@me")
@@ -80,20 +82,29 @@ async def get_me(user: User = Depends(user_auth)):
     }
 
 
+def reencode(file: BytesIO) -> BytesIO:
+    img = Image.open(file)
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out
+
+
 @app.patch("/users/@me")
 async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
     if (skin := getImage(data.skin)) is not None:
+        skin = reencode(skin)
         skin_id = uuid4()
         await S3.upload_object("wlands", f"skins/{user.id}/{skin_id}.png", skin)
         await user.update(skin=skin_id)
-    elif data.skin is None:
+    elif data.skin == "":
         await user.update(skin=None)
 
     if (cape := getImage(data.cape)) is not None:
+        cape = reencode(cape)
         cape_id = uuid4()
         await S3.upload_object("wlands", f"capes/{user.id}/{cape_id}.png", cape)
         await user.update(cape=cape_id)
-    elif data.cape is None:
+    elif data.cape == "":
         await user.update(cape=None)
 
     return await get_me(user)

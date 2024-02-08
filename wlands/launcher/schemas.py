@@ -9,7 +9,7 @@ from wlands.launcher.utils import getImage
 class LoginData(BaseModel):
     email: EmailStr
     password: str
-    code: str | None = Field(default=None, min_length=6, max_length=6, regex=r'^[0-9]+$')
+    code: str | None = Field(default=None, min_length=6, max_length=6, pattern=r'^[0-9]+$')
 
 
 class TokenRefreshData(BaseModel):
@@ -22,8 +22,11 @@ class PatchUserData(BaseModel):
 
     @field_validator("skin", "cape")
     def validate_skin_cape(cls, value: str | None, info: ValidationInfo) -> str | None:
-        if value is None or (image := getImage(value)) is None:
-            return
+        if value is None or value == "":
+            return value
+
+        if (image := getImage(value)) is None:
+            raise CustomBodyException(400, {info.field_name: ["Invalid image."]})
 
         image = Image.open(image)
         if info.field_name == "cape" and image.size != (64, 32):

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from tortoise import fields
 
 from wlands import models
@@ -5,7 +7,7 @@ from ._utils import Model
 
 
 class PlayerReport(Model):
-    id: int = fields.BigIntField(primary_key=True)
+    id: int = fields.BigIntField(pk=True)
     reporter: models.User = fields.ForeignKeyField("models.User", related_name="reporter")
     reporter_client: str = fields.CharField(max_length=32)
     reported: models.User = fields.ForeignKeyField("models.User", related_name="reported")
