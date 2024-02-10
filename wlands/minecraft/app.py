@@ -1,10 +1,12 @@
 from uuid import UUID
 
 from Crypto.PublicKey import RSA
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Response
+from pytz import UTC
 
 from .dependencies import mc_user_auth, mc_user_auth_data
 from .schemas import JoinRequestData
+from ..config import YGGDRASIL_PUBLIC_STR
 from ..exceptions import BadRequestException, ForbiddenException
 from ..models import PlayerKeyPair, GameJoinRequest, User
 
@@ -55,7 +57,7 @@ async def player_certificates(user: User = Depends(mc_user_auth)):
         priv = RSA.generate(2048)
         pub = priv.publickey()
         keyPair = await PlayerKeyPair.create(
-            user=user, private_key=priv.export_key('PEM', pkcs=8).decode("utf8"), signature="AA==",
+            user=user, private_key=priv.export_key('PEM', pkcs=8).decode("utf8"),
             public_key=pub.export_key('PEM').decode("utf8"), signature_v2="AA=="
         )
         await keyPair.update(signature_v2=keyPair.generate_signature())
@@ -88,7 +90,7 @@ async def player_report():
     return {}
 
 
-@app.post("/session/minecraft/join")
+@app.post("/session/session/minecraft/join")
 async def mc_join(data: JoinRequestData, user: User = Depends(mc_user_auth_data)):
     if not data.selectedProfile or not data.serverId:
         raise BadRequestException("One or more required fields was missing.")
@@ -96,10 +98,10 @@ async def mc_join(data: JoinRequestData, user: User = Depends(mc_user_auth_data)
         raise ForbiddenException("Invalid token.")
 
     await GameJoinRequest.create(user=user, server_id=data.serverId)
-    return {}
+    return Response()
 
 
-@app.get("/session/minecraft/hasJoined")
+@app.get("/session/session/minecraft/hasJoined")
 async def mc_has_joined(serverId: str | None, username: str | None):
     if not serverId or not username:
         raise BadRequestException("One or more required fields was missing.")
@@ -116,7 +118,7 @@ async def mc_has_joined(serverId: str | None, username: str | None):
     }
 
 
-@app.get("/session/minecraft/profile/{user_id}")
+@app.get("/session/session/minecraft/profile/{user_id}")
 async def mc_profile(user_id: UUID, unsigned: bool = False):
     if (user := await User.get_or_none(id=user_id)) is None:
         raise BadRequestException("Profile does not exist.")
@@ -125,4 +127,12 @@ async def mc_profile(user_id: UUID, unsigned: bool = False):
         "id": user.id.hex.replace("-", ""),
         "name": user.nickname,
         "properties": user.properties(not unsigned)
+    }
+
+
+@app.get("/services/publickeys")
+async def yggdrasil_keys():
+    return {
+        "profilePropertyKeys": [{"publicKey": YGGDRASIL_PUBLIC_STR}],
+        "playerCertificateKeys": [{"publicKey": YGGDRASIL_PUBLIC_STR}],
     }

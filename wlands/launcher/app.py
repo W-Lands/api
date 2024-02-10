@@ -11,7 +11,7 @@ from .schemas import LoginData, TokenRefreshData, PatchUserData
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
-from ..models import User, GameSession
+from ..models import User, GameSession, Update
 
 app = FastAPI()
 
@@ -108,3 +108,29 @@ async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
         await user.update(cape=None)
 
     return await get_me(user)
+
+
+@app.get("/updates")
+async def get_updates(version: int = 0):
+    updates_ = await Update.filter(is_base=True, id__gt=version).order_by("id")
+    updates = []
+    latestVersion = version
+    for upd in updates_:
+        latestVersion = max(latestVersion, upd.id)
+        updates.append({"os": upd.os, "arch": upd.arch, "files": upd.files})
+
+    return {
+        "version": latestVersion,
+        "updates": updates,
+    }
+
+
+@app.get("/updates/base")
+async def get_base_updates():
+    updates = await Update.filter(is_base=True).order_by("id")
+    updates = [{"os": upd.os, "arch": upd.arch, "files": upd.files} for upd in updates]
+
+    return {
+        "version": -1,
+        "updates": updates,
+    }

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from Crypto.Hash import SHA1
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
+from pytz import UTC
 from tortoise import fields
 
 from wlands import models
@@ -14,11 +15,11 @@ from ..config import YGGDRASIL_PRIVATE_KEY
 
 
 def expires_after_7d():
-    return datetime.now() + timedelta(days=7)
+    return datetime.now().astimezone(UTC) + timedelta(days=7)
 
 
 def expires_after_6d():
-    return datetime.now() + timedelta(days=7)
+    return datetime.now().astimezone(UTC) + timedelta(days=7)
 
 
 class PlayerKeyPair(Model):
@@ -33,7 +34,7 @@ class PlayerKeyPair(Model):
 
     @property
     def can_be_refreshed(self) -> bool:
-        return datetime.now() > self.refreshes
+        return datetime.now(self.refreshes.tzinfo) > self.refreshes
 
     def generate_signature(self) -> str:
         signer = PKCS1_v1_5.new(YGGDRASIL_PRIVATE_KEY)

@@ -35,4 +35,4 @@ async def mc_user_auth(request: Request):
 
 
 async def mc_user_auth_data(request: Request):
-    return await mc_user_auth_internal(request, False)
+    return await mc_user_auth_internal(request, True)
