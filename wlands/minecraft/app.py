@@ -2,7 +2,6 @@ from uuid import UUID
 
 from Crypto.PublicKey import RSA
 from fastapi import FastAPI, Depends, Response
-from pytz import UTC
 
 from .dependencies import mc_user_auth, mc_user_auth_data
 from .schemas import JoinRequestData
