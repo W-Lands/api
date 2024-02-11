@@ -3,3 +3,4 @@
 **/keys/*.pem
 **/*.http
 **/ssl
+**/.env

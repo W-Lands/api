@@ -20,11 +20,8 @@ register_tortoise(
 )
 
 
+@app.exception_handler(CustomBodyException)
+@minecraft.app.exception_handler(CustomBodyException)
+@launcher.app.exception_handler(CustomBodyException)
 async def custom_exception_handler(request: Request, exc: CustomBodyException):
     return JSONResponse(status_code=exc.code, content=exc.body)
-
-
-app.exception_handler(CustomBodyException)(custom_exception_handler)
-minecraft.app.exception_handler(CustomBodyException)(custom_exception_handler)
-launcher.app.exception_handler(CustomBodyException)(custom_exception_handler)
-
