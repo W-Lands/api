@@ -13,11 +13,12 @@
     mv .env.example .env
     ```
 3. Change config variables
-4. Run:
+4. Generate 4096-bit RSA keypair in keys directory
+5. Run:
     ```shell
     docker compose up
     ```
-5. Log in into minio admin and change wlands-updates bucket policy to:
+6. Log in into minio admin panel and change wlands-updates bucket policy to:
 ```json
 {
     "Version": "2012-10-17",
@@ -48,7 +49,8 @@
     - `S3_ENDPOINT` - S3 endpoint, for example: `http://127.0.0.1:9000`
     - `S3_ACCESS_KEY_ID` - S3 access key
     - `S3_SECRET_ACCESS_KEY` - S3 secret key
-4. Run:
+4. Generate 4096-bit RSA keypair in keys directory
+5. Run:
     ```shell
     poetry run uvicorn --workers 4 --host 127.0.0.1 --port 8080 wlands.main:app
     ```
