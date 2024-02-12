@@ -1,10 +1,12 @@
+from os import environ
+
 from fastapi import FastAPI, Request
 from starlette.responses import JSONResponse
 from tortoise.contrib.fastapi import register_tortoise
 
 from . import minecraft
 from . import launcher
-from .config import DATABASE_URL
+from .config import DATABASE_URL, S3
 from .exceptions import CustomBodyException
 
 app = FastAPI()
@@ -18,6 +20,20 @@ register_tortoise(
     generate_schemas=True,
     add_exception_handlers=False,
 )
+
+
+@app.on_event("startup")
+async def on_startup():
+    if environ.get("SET_UPDATES_BUCKET_POLICY") == "1":
+        await S3.put_bucket_policy("wlands-updates", {
+            'Version': '2012-10-17',
+            'Statement': [{
+                'Effect': 'Allow',
+                'Principal': {'AWS': ['*']},
+                'Action': ['s3:GetObject'],
+                'Resource': [f'arn:aws:s3:::wlands-updates/*']
+            }]
+        })
 
 
 @app.exception_handler(CustomBodyException)

@@ -30,6 +30,8 @@
     }]
 }
 ```
+OR<br>
+set `SET_UPDATES_BUCKET_POLICY` environment variable to `1`, it will set bucket policy automatically on startup.
 
 ## Setup (without docker)
 **Requirements:**
@@ -49,6 +51,9 @@
     - `S3_ENDPOINT` - S3 endpoint, for example: `http://127.0.0.1:9000`
     - `S3_ACCESS_KEY_ID` - S3 access key
     - `S3_SECRET_ACCESS_KEY` - S3 secret key
+   <br><br>
+   **Optional variables:**
+    - `SET_UPDATES_BUCKET_POLICY` - set to `1` to enable automatic updates bucket policy changing.
 4. Generate 4096-bit RSA keypair in keys directory
 5. Run:
     ```shell
