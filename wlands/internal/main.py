@@ -1,11 +1,11 @@
 from bcrypt import gensalt, hashpw
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Header
 from starlette.responses import JSONResponse
 from tortoise.contrib.fastapi import register_tortoise
 from tortoise.expressions import Q
 
 from .schemas import CreateUser
-from ..config import DATABASE_URL
+from ..config import DATABASE_URL, INTERNAL_AUTH_TOKEN
 from ..exceptions import CustomBodyException
 from ..models import User, TgUser
 
@@ -26,7 +26,10 @@ async def custom_exception_handler(request: Request, exc: CustomBodyException):
 
 
 @app.post("/users/")
-async def create_user(data: CreateUser):
+async def create_user(data: CreateUser, authorization: str | None = Header(default=None)):
+    if authorization != INTERNAL_AUTH_TOKEN:
+        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
+
     if data.telegram_id is not None and await TgUser.filter(id=data.telegram_id).exists():
         raise CustomBodyException(400, {"error_message": "User with this telegram account already exists"})
 

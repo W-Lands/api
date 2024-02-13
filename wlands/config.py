@@ -1,4 +1,5 @@
-from os import environ
+from base64 import b64encode
+from os import environ, urandom
 from os.path import exists
 
 from Crypto.PublicKey import RSA
@@ -20,3 +21,5 @@ with open("keys/public.pem", "r") as pubkey:
     YGGDRASIL_PUBLIC_STR = pubkey.read()
     YGGDRASIL_PUBLIC_KEY = RSA.import_key(YGGDRASIL_PUBLIC_STR)
     YGGDRASIL_PUBLIC_STR = "".join(YGGDRASIL_PUBLIC_STR.split("\n")[1:-2])
+
+INTERNAL_AUTH_TOKEN = environ.get("INTERNAL_AUTH_TOKEN", b64encode(urandom(64)).decode("utf8"))
