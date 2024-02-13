@@ -38,19 +38,19 @@ services:
       - minio
       - mariadb
     restart: unless-stopped
-  wlands-api-internal:
-    build: .
-    entrypoint: /wlands/entrypoint-internal.sh
-    networks: ['wlands']
-    volumes: ['./keys:/wlands/keys']
-    environment:
-      - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mariadb/wlands
-      - INTERNAL_AUTH_TOKEN=${INTERNAL_AUTH_TOKEN}
-      - S3_ENDPOINT=http://minio:9000
-      - S3_ACCESS_KEY_ID=${MINIO_SERVER_ACCESS_KEY}
-      - S3_SECRET_ACCESS_KEY=${MINIO_SERVER_SECRET_KEY}
-    depends_on: [wlands-api]
-    restart: unless-stopped
+  #wlands-api-internal:
+  #  build: .
+  #  entrypoint: /wlands/entrypoint-internal.sh
+  #  networks: ['wlands']
+  #  volumes: ['./keys:/wlands/keys']
+  #  environment:
+  #    - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mariadb/wlands
+  #    - INTERNAL_AUTH_TOKEN=${INTERNAL_AUTH_TOKEN}
+  #    - S3_ENDPOINT=http://minio:9000
+  #    - S3_ACCESS_KEY_ID=${MINIO_SERVER_ACCESS_KEY}
+  #    - S3_SECRET_ACCESS_KEY=${MINIO_SERVER_SECRET_KEY}
+  #  depends_on: [wlands-api]
+  #  restart: unless-stopped
   nginx:
     image: nginx
     ports:
