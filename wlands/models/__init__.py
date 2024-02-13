@@ -5,3 +5,4 @@ from .player_report import PlayerReport
 from .user import User
 from .user_session import UserSession
 from .update import Update
+from .tg_user import TgUser
