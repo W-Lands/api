@@ -22,6 +22,7 @@ class User(Model):
     cape: str = fields.UUIDField(null=True, default=None)
     mfa_key: str = fields.CharField(null=True, default=None, max_length=64)
     signed_for_beta: bool = fields.BooleanField(default=False)
+    banned: bool = fields.BooleanField(default=False)
 
     @property
     def skin_url(self) -> str | None:

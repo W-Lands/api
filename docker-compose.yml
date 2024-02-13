@@ -13,6 +13,7 @@ services:
       - MINIO_DEFAULT_BUCKETS=wlands,wlands-updates
       - MINIO_SERVER_HOST=${MINIO_SERVER_HOST}
       - MINIO_BROWSER_REDIRECT_URL=${MINIO_BROWSER_REDIRECT_URL}
+    restart: unless-stopped
   mariadb:
     image: mariadb:10.6
     networks: ['wlands']
@@ -22,6 +23,7 @@ services:
       - MARIADB_DATABASE=wlands
       - MARIADB_USER=${MYSQL_USER}
       - MARIADB_PASSWORD=${MYSQL_PASSWORD}
+    restart: unless-stopped
   wlands-api:
     build: .
     networks: ['wlands']
@@ -44,6 +46,7 @@ services:
     volumes:
       - './nginx.conf:/etc/nginx/nginx.conf'
     depends_on: [wlands-api]
+    restart: unless-stopped
 
 networks:
   wlands:

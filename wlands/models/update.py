@@ -20,3 +20,4 @@ class Update(Model):
     os: str = fields.CharField(max_length=16, default="any")
     arch: str = fields.CharField(max_length=16, default="any")
     files: list[dict[str, str]] = fields.JSONField()
+    pending: bool = fields.BooleanField(default=False)
