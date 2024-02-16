@@ -28,6 +28,9 @@ async def login(data: LoginData):
     if code is not None and code != data.code:
         raise CustomBodyException(400, {"code": ["Incorrect 2fa code."]})
 
+    if user.banned:
+        raise CustomBodyException(400, {"code": ["User is banned."]})
+
     session = await GameSession.create(user=user)
 
     return {
