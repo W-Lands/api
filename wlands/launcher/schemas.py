@@ -7,9 +7,15 @@ from wlands.launcher.utils import getImage
 
 
 class LoginData(BaseModel):
-    email: EmailStr
+    email: EmailStr | str
     password: str
     code: str | None = Field(default=None, min_length=6, max_length=6, pattern=r'^[0-9]+$')
+
+    @field_validator("email")
+    def validate_email(cls, value: str):
+        if "@" not in value:
+            value += "@wlands.pepega"
+        return value
 
 
 class TokenRefreshData(BaseModel):
