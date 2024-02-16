@@ -11,6 +11,7 @@ if not exists("keys/private.pem"):
 
 S3 = Client(environ["S3_ACCESS_KEY_ID"], environ["S3_SECRET_ACCESS_KEY"], environ["S3_ENDPOINT"])
 DATABASE_URL = environ["DATABASE_URL"]
+MIGRATIONS_DIR = environ.get("MIGRATIONS_DIR", "./migrations")
 
 with open("keys/private.pem", "r") as privkey:
     YGGDRASIL_PRIVATE_STR = privkey.read()

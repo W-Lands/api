@@ -1,13 +1,16 @@
-from bcrypt import gensalt, hashpw
+from uuid import UUID
+
+from bcrypt import gensalt, hashpw, checkpw
 from fastapi import FastAPI, Request, Header
 from starlette.responses import JSONResponse
 from tortoise.contrib.fastapi import register_tortoise
 from tortoise.expressions import Q
 
-from .schemas import CreateUser
+from .schemas import CreateUser, EditUser
 from ..config import DATABASE_URL, INTERNAL_AUTH_TOKEN
 from ..exceptions import CustomBodyException
-from ..models import User, TgUser
+from ..launcher.app import edit_texture
+from ..models import User, TgUser, GameSession, UserSession
 
 app = FastAPI()
 
@@ -42,3 +45,83 @@ async def create_user(data: CreateUser, authorization: str | None = Header(defau
         await TgUser.create(id=data.telegram_id, user=user)
 
     return {"id": user.id}
+
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: UUID, authorization: str | None = Header(default=None)):
+    if authorization != INTERNAL_AUTH_TOKEN:
+        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
+
+    if (user := await User.get_or_none(id=user_id)) is None:
+        raise CustomBodyException(400, {"error_message": "User not found."})
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "nickname": user.nickname,
+        "skin": user.skin,
+        "cape": user.cape,
+        "mfa": user.mfa_key is not None,
+        "signed_for_beta": user.signed_for_beta,
+        "banned": user.banned,
+    }
+
+
+@app.patch("/users/{user_id}")
+async def edit_user(user_id: UUID, data: EditUser, authorization: str | None = Header(default=None)):
+    if authorization != INTERNAL_AUTH_TOKEN:
+        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
+
+    if (user := await User.get_or_none(id=user_id)) is None:
+        raise CustomBodyException(400, {"error_message": "User not found."})
+
+    if data.new_password is not None:
+        if data.password is None or not checkpw(data.password.encode("utf8"), user.password.encode("utf8")):
+            raise CustomBodyException(400, {"error_message": "Old password is wrong."})
+
+        await user.update(password=hashpw(data.password.encode("utf8"), gensalt()).decode("utf8"))
+
+    await edit_texture(user, "skin", data.skin)
+    await edit_texture(user, "cape", data.cape)
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "login": user.nickname,
+        "skin": user.skin_url,
+        "cape": user.cape_url,
+        "mfa": user.mfa_key is not None,
+        "signed_for_beta": user.signed_for_beta,
+        "banned": user.banned,
+    }
+
+
+@app.post("/users/{user_id}/ban", status_code=204)
+async def ban_user(user_id: UUID, authorization: str | None = Header(default=None)):
+    if authorization != INTERNAL_AUTH_TOKEN:
+        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
+
+    if (user := await User.get_or_none(id=user_id)) is None:
+        raise CustomBodyException(400, {"error_message": "User not found."})
+
+    if user.banned:
+        raise CustomBodyException(400, {"error_message": "User already banned."})
+
+    await user.update(banned=True)
+    await GameSession.filter(user=user).delete()
+    await UserSession.filter(user=user).delete()
+
+
+@app.post("/users/{user_id}/unban", status_code=204)
+async def ban_user(user_id: UUID, authorization: str | None = Header(default=None)):
+    if authorization != INTERNAL_AUTH_TOKEN:
+        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
+
+    if (user := await User.get_or_none(id=user_id)) is None:
+        raise CustomBodyException(400, {"error_message": "User not found."})
+
+    if not user.banned:
+        raise CustomBodyException(400, {"error_message": "User is not banned."})
+
+    await user.update(banned=False)
+

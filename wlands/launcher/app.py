@@ -89,23 +89,20 @@ def reencode(file: BytesIO) -> BytesIO:
     return out
 
 
+async def edit_texture(user: User, name: str, image: str):
+    if (texture := getImage(image)) is not None:
+        texture = reencode(texture)
+        texture_id = uuid4()
+        await S3.upload_object("wlands", f"{name}s/{user.id}/{texture_id}.png", texture)
+        await user.update(**{name: texture_id})
+    elif image == "":
+        await user.update(**{name: None})
+
+
 @app.patch("/users/@me")
 async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
-    if (skin := getImage(data.skin)) is not None:
-        skin = reencode(skin)
-        skin_id = uuid4()
-        await S3.upload_object("wlands", f"skins/{user.id}/{skin_id}.png", skin)
-        await user.update(skin=skin_id)
-    elif data.skin == "":
-        await user.update(skin=None)
-
-    if (cape := getImage(data.cape)) is not None:
-        cape = reencode(cape)
-        cape_id = uuid4()
-        await S3.upload_object("wlands", f"capes/{user.id}/{cape_id}.png", cape)
-        await user.update(cape=cape_id)
-    elif data.cape == "":
-        await user.update(cape=None)
+    await edit_texture(user, "skin", data.skin)
+    await edit_texture(user, "cape", data.cape)
 
     return await get_me(user)
 

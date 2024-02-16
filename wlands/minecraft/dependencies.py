@@ -27,6 +27,9 @@ async def mc_user_auth_internal(request: Request, from_data: bool):
     if session is None:
         raise ForbiddenException("Invalid token.")
 
+    if session.user.banned:
+        raise ForbiddenException("User is banned.")
+
     return session.user
 
 

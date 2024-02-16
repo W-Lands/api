@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from wlands.launcher.schemas import PatchUserData
+
 
 class CreateUser(BaseModel):
     login: str
@@ -7,3 +9,8 @@ class CreateUser(BaseModel):
     password: str
 
     telegram_id: int | None = None
+
+
+class EditUser(PatchUserData):
+    password: str | None = None
+    new_password: str | None = None

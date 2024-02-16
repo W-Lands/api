@@ -23,6 +23,9 @@ async def get_session(request: Request, allow_expired: bool):
     if (session := await GameSession.get_or_none(**q).select_related("user")) is None:
         raise ForbiddenException("Invalid token.")
 
+    if session.user.banned:
+        raise ForbiddenException("User is banned.")
+
     return session
 
 
