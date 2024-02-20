@@ -23,15 +23,15 @@ class TokenRefreshData(BaseModel):
 
 
 class PatchUserData(BaseModel):
-    skin: str | None = Field(default=None, max_length=int(64 * 1024 * 1.5))
-    cape: str | None = Field(default=None, max_length=int(64 * 1024 * 1.5))
+    skin: str | None = Field(default=None)
+    cape: str | None = Field(default=None)
 
     @field_validator("skin", "cape")
     def validate_skin_cape(cls, value: str | None, info: ValidationInfo) -> str | None:
         if value is None or value == "":
             return value
 
-        if (image := getImage(value)) is None:
+        if len(value) > 64 * 1024 * 1.5 or (image := getImage(value)) is None:
             raise CustomBodyException(400, {info.field_name: ["Invalid image."]})
 
         image = Image.open(image)
