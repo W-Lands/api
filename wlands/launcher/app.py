@@ -112,7 +112,7 @@ async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
 
 @app.get("/updates")
 async def get_updates(version: int = 0):
-    updates_ = await Update.filter(is_base=False, id__gt=version).order_by("id")
+    updates_ = await Update.filter(is_base=False, id__gt=version, pending=False).order_by("id")
     updates = []
     latestVersion = version
     for upd in updates_:
@@ -127,7 +127,7 @@ async def get_updates(version: int = 0):
 
 @app.get("/updates/base")
 async def get_base_updates():
-    updates = await Update.filter(is_base=True).order_by("id")
+    updates = await Update.filter(is_base=True, pending=False).order_by("id")
     updates = [{"os": upd.os, "arch": upd.arch, "files": upd.files} for upd in updates]
 
     return {

@@ -14,3 +14,9 @@ class CreateUser(BaseModel):
 class EditUser(PatchUserData):
     password: str | None = None
     new_password: str | None = None
+
+
+class CreateUpdate(BaseModel):
+    os: str = "any"
+    arch: str = "any"
+    base: bool = False
