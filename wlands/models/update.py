@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-import json
-from base64 import b64encode
-from time import time
-from uuid import uuid4, UUID
-
-from Crypto.Hash import SHA1
-from Crypto.Signature import PKCS1_v1_5
 from tortoise import fields
 
 from ._utils import Model
-from ..config import S3, YGGDRASIL_PRIVATE_KEY
 
 
 class Update(Model):

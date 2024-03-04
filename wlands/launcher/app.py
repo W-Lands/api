@@ -1,17 +1,18 @@
+from datetime import datetime
 from io import BytesIO
-from time import mktime
+from time import mktime, time
 from uuid import uuid4
 
 from PIL import Image
 from bcrypt import checkpw
-from fastapi import FastAPI, Depends, Response
+from fastapi import FastAPI, Depends, Response, UploadFile
 
 from .dependencies import sess_auth_expired, user_auth
 from .schemas import LoginData, TokenRefreshData, PatchUserData
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
-from ..models import User, GameSession, Update
+from ..models import User, GameSession, Update, AllowedMod
 
 app = FastAPI()
 
@@ -134,3 +135,27 @@ async def get_base_updates():
         "version": -1,
         "updates": updates,
     }
+
+
+@app.get("/mods")
+async def get_allowed_mods():
+    ids: set[str] = set()
+    classes: set[str] = set()
+    for mod in await AllowedMod.all():
+        ids.add(mod.hashed_id)
+        classes.update(mod.classes)
+
+    return {
+        "ids": list(ids),
+        "classes": list(classes),
+    }
+
+
+@app.post("/logs", status_code=204)
+async def upload_logs(log: UploadFile, user: User = Depends(user_auth)):
+    date = datetime.utcnow().strftime("%d%m%Y")
+    if log.size > 1024 * 1024 * 16:
+        return
+
+    file = BytesIO(await log.read())
+    await S3.upload_object("wlands", f"logs/{date}/{user.id}/{int(time() % 86400)}.txt", file)
