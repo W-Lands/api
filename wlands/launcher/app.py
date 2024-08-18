@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from io import BytesIO
 from time import mktime, time
@@ -8,7 +9,7 @@ from bcrypt import checkpw
 from fastapi import FastAPI, Depends, Response, UploadFile
 
 from .dependencies import sess_auth_expired, user_auth
-from .schemas import LoginData, TokenRefreshData, PatchUserData
+from .schemas import LoginData, TokenRefreshData, PatchUserData, PresignUrl
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
@@ -83,6 +84,7 @@ async def get_me(user: User = Depends(user_auth)):
         "cape": user.cape_url,
         "mfa": user.mfa_key is not None,
         "signed_for_beta": user.signed_for_beta,
+        "admin": user.admin,
     }
 
 
@@ -152,10 +154,23 @@ async def get_allowed_mods():
 
 
 @app.post("/logs", status_code=204)
-async def upload_logs(log: UploadFile, user: User = Depends(user_auth)):
+async def upload_logs(log: UploadFile, session: str | None = None, user: User = Depends(user_auth)):
     date = datetime.utcnow().strftime("%d%m%Y")
     if log.size > 1024 * 1024 * 16:
         return
 
+    if session is None:
+        session = time() // 86400
+
     file = BytesIO(await log.read())
-    await S3.upload_object("wlands", f"logs/{date}/{user.id}/{int(time() % 86400)}.txt", file)
+    await S3.upload_object("wlands", f"logs/{date}/{user.id}/{session}/{int(time() % 86400)}.txt", file)
+
+
+@app.post("/storage/presign")
+async def upload_logs(data: PresignUrl, user: User = Depends(user_auth)):
+    if not user.admin:
+        raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
+
+    return {
+        "url": S3.share("wlands-updates", data.key, 60 * 60, True)
+    }

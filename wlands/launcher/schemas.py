@@ -41,3 +41,7 @@ class PatchUserData(BaseModel):
             raise CustomBodyException(400, {info.field_name: ["Invalid image."]})
 
         return value
+
+
+class PresignUrl(BaseModel):
+    key: str
