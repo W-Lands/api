@@ -9,7 +9,7 @@ from bcrypt import checkpw
 from fastapi import FastAPI, Depends, Response, UploadFile
 
 from .dependencies import sess_auth_expired, user_auth
-from .schemas import LoginData, TokenRefreshData, PatchUserData, PresignUrl
+from .schemas import LoginData, TokenRefreshData, PatchUserData, PresignUrl, UploadProfile
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
@@ -167,10 +167,33 @@ async def upload_logs(log: UploadFile, session: str | None = None, user: User = 
 
 
 @app.post("/storage/presign")
-async def upload_logs(data: PresignUrl, user: User = Depends(user_auth)):
+async def presign_s3(data: PresignUrl, user: User = Depends(user_auth)):
     if not user.admin:
         raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
 
     return {
         "url": S3.share("wlands-updates", data.key, 60 * 60, True)
     }
+
+
+@app.post("/profiles/{profile}")
+async def upload_url(profile: str, data: UploadProfile, user: User = Depends(user_auth)):
+    if not user.admin:
+        raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
+
+    manifest = json.load(await S3.download_object("wlands-updates", "/profiles/.metadata.json", in_memory=True))
+    version = (manifest["profiles"][profile]["version"] + 1) if profile in manifest else 1
+    manifest["profiles"][profile] = {
+        "version": version,
+        "manifest": data.manifest_url,
+        "game_files": data.model_dump(include={"game_files"})["game_files"],
+        "profile_files": data.model_dump(include={"profile_files"})["profile_files"],
+    }
+    if data.set_current:
+        manifest["current"] = profile
+
+    file = BytesIO(json.dumps(manifest).encode("utf8"))
+    await S3.upload_object("wlands-updates", "/profiles/.metadata.json", file)
+
+    return manifest["profiles"][profile]
+

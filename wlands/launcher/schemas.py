@@ -45,3 +45,16 @@ class PatchUserData(BaseModel):
 
 class PresignUrl(BaseModel):
     key: str
+
+
+class UploadProfileFile(BaseModel):
+    path: str
+    url: str
+    sha1: str
+
+
+class UploadProfile(BaseModel):
+    manifest_url: str
+    game_files: list[UploadProfileFile]
+    profile_files: list[UploadProfileFile]
+    set_current: bool = False
