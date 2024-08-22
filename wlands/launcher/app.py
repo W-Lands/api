@@ -182,7 +182,7 @@ async def upload_url(profile: str, data: UploadProfile, user: User = Depends(use
         raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
 
     manifest = json.load(await S3.download_object("wlands-updates", "/profiles/.metadata.json", in_memory=True))
-    version = (manifest["profiles"][profile]["version"] + 1) if profile in manifest else 1
+    version = (manifest["profiles"][profile]["version"] + 1) if profile in manifest["profiles"] else 1
     manifest["profiles"][profile] = {
         "version": version,
         "manifest": data.manifest_url,
