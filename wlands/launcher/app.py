@@ -7,6 +7,7 @@ from uuid import uuid4
 from PIL import Image
 from bcrypt import checkpw
 from fastapi import FastAPI, Depends, Response, UploadFile
+from s3lite import S3Exception
 
 from .dependencies import sess_auth_expired, user_auth
 from .schemas import LoginData, TokenRefreshData, PatchUserData, PresignUrl, UploadProfile
@@ -181,7 +182,14 @@ async def upload_url(profile: str, data: UploadProfile, user: User = Depends(use
     if not user.admin:
         raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
 
-    manifest = json.load(await S3.download_object("wlands-updates", "/profiles/.metadata.json", in_memory=True))
+    try:
+        manifest: dict = json.load(
+            await S3.download_object("wlands-updates", "/profiles/.metadata.json", in_memory=True)
+        )
+    except S3Exception as e:
+        manifest: dict = {"profiles": {}}
+        data.set_current = True
+
     version = (manifest["profiles"][profile]["version"] + 1) if profile in manifest["profiles"] else 1
     manifest["profiles"][profile] = {
         "version": version,
