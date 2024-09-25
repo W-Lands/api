@@ -4,20 +4,22 @@ version = "0.1.0"
 description = ""
 authors = ["RuslanUC <dev_ruslan_uc@protonmail.com>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.10"
-fastapi = "^0.109.0"
-uvicorn = "^0.27.0"
-tortoise-orm = {extras = ["asyncmy"], version = "^0.20.0"}
+fastapi = "^0.115.0"
+uvicorn = "^0.30.6"
+tortoise-orm = {extras = ["asyncmy", "accel"], version = "^0.21.6"}
 pycryptodome = "^3.20.0"
 bcrypt = "^4.1.2"
 python-magic = "^0.4.27"
 pillow = "^10.2.0"
 s3lite = "^0.1.8"
-pydantic = {extras = ["email"], version = "^2.6.1"}
+pydantic = {extras = ["email"], version = "^2.9.2"}
 aerich = "^0.7.2"
 python-multipart = "^0.0.9"
+fastui = "^0.7.0"
 
 
 [build-system]

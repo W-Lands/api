@@ -18,9 +18,9 @@ class User(Model):
     email: str = fields.CharField(max_length=255, unique=True)
     nickname: str = fields.CharField(max_length=32, unique=True)
     password: str = fields.TextField()
-    skin: str = fields.UUIDField(null=True, default=None)
-    cape: str = fields.UUIDField(null=True, default=None)
-    mfa_key: str = fields.CharField(null=True, default=None, max_length=64)
+    skin: str | None = fields.UUIDField(null=True, default=None)
+    cape: str | None = fields.UUIDField(null=True, default=None)
+    mfa_key: str | None = fields.CharField(null=True, default=None, max_length=64)
     signed_for_beta: bool = fields.BooleanField(default=False)
     banned: bool = fields.BooleanField(default=False)
     admin: bool = fields.BooleanField(default=False)
@@ -65,3 +65,6 @@ class User(Model):
         props.append(textures)
 
         return props
+
+    def has_mfa(self) -> bool:
+        return self.mfa_key is not None

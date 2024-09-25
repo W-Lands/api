@@ -1,4 +1,6 @@
 import json
+from asyncio import get_event_loop
+from concurrent.futures.thread import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 from time import mktime, time
@@ -8,6 +10,7 @@ from PIL import Image
 from bcrypt import checkpw
 from fastapi import FastAPI, Depends, Response, UploadFile
 from s3lite import S3Exception
+from tortoise.expressions import Q
 
 from .dependencies import sess_auth_expired, user_auth
 from .schemas import LoginData, TokenRefreshData, PatchUserData, PresignUrl, UploadProfile
@@ -21,7 +24,8 @@ app = FastAPI()
 
 @app.post("/auth/login")
 async def login(data: LoginData):
-    if (user := await User.get_or_none(email=data.email)) is None:
+    query = Q(email=data.email) if "@" in data.email else Q(nickname=data.email)
+    if (user := await User.get_or_none(query)) is None:
         raise CustomBodyException(400, {"email": ["User with this email/password does not exists."]})
 
     if not checkpw(data.password.encode(), user.password.encode()):
@@ -98,7 +102,8 @@ def reencode(file: BytesIO) -> BytesIO:
 
 async def edit_texture(user: User, name: str, image: str):
     if (texture := getImage(image)) is not None:
-        texture = reencode(texture)
+        with ThreadPoolExecutor() as pool:
+            texture = await get_event_loop().run_in_executor(pool, lambda: reencode(texture))
         texture_id = uuid4()
         await S3.upload_object("wlands", f"{name}s/{user.id}/{texture_id}.png", texture)
         await user.update(**{name: texture_id})

@@ -7,14 +7,14 @@ from starlette.responses import JSONResponse
 from tortoise import Tortoise
 from tortoise.contrib.fastapi import register_tortoise
 
-from . import minecraft
-from . import launcher
+from . import minecraft, launcher, admin
 from .config import DATABASE_URL, S3, MIGRATIONS_DIR
 from .exceptions import CustomBodyException
 
 app = FastAPI()
 app.mount("/minecraft", minecraft.app)
 app.mount("/launcher", launcher.app)
+app.mount("/admin", admin.app)
 
 
 @app.on_event("startup")

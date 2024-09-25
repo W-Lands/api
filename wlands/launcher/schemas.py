@@ -11,12 +11,6 @@ class LoginData(BaseModel):
     password: str
     code: str | None = Field(default=None, min_length=6, max_length=6, pattern=r'^[0-9]+$')
 
-    @field_validator("email")
-    def validate_email(cls, value: str):
-        if "@" not in value:
-            value += "@wlands.pepega"
-        return value
-
 
 class TokenRefreshData(BaseModel):
     refresh_token: str
