@@ -10,7 +10,9 @@ if not exists("keys/private.pem"):
                        "Keys must be named \"private.pem\" and \"public.pem\"")
 
 S3_ENDPOINT = environ["S3_ENDPOINT"]
+S3_ENDPOINT_PUBLIC = environ.get("S3_ENDPOINT_PUBLIC", S3_ENDPOINT)
 S3 = Client(environ["S3_ACCESS_KEY_ID"], environ["S3_SECRET_ACCESS_KEY"], S3_ENDPOINT)
+S3_PUBLIC = Client(environ["S3_ACCESS_KEY_ID"], environ["S3_SECRET_ACCESS_KEY"], S3_ENDPOINT_PUBLIC)
 DATABASE_URL = environ["DATABASE_URL"]
 MIGRATIONS_DIR = environ.get("MIGRATIONS_DIR", "./migrations")
 

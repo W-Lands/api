@@ -15,7 +15,7 @@ from tortoise.expressions import Q
 from .dependencies import sess_auth_expired, user_auth
 from .schemas import LoginData, TokenRefreshData, PatchUserData, PresignUrl, UploadProfile
 from .utils import Mfa, getImage
-from ..config import S3
+from ..config import S3, S3_PUBLIC
 from ..exceptions import CustomBodyException
 from ..models import User, GameSession, Update, AllowedMod
 
@@ -178,7 +178,7 @@ async def presign_s3(data: PresignUrl, user: User = Depends(user_auth)):
         raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
 
     return {
-        "url": S3.share("wlands-updates", data.key, 60 * 60, True)
+        "url": S3_PUBLIC.share("wlands-updates", data.key, 60 * 60, True)
     }
 
 
