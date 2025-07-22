@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from tortoise import fields
-
-from ._utils import Model
+from tortoise import fields, Model
 
 
 class Update(Model):

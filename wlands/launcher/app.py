@@ -9,11 +9,13 @@ from uuid import uuid4
 from PIL import Image
 from bcrypt import checkpw
 from fastapi import FastAPI, Depends, Response, UploadFile
+from pytz import UTC
 from s3lite import S3Exception
 from tortoise.expressions import Q
 
 from .dependencies import sess_auth_expired, user_auth
-from .schemas import LoginData, TokenRefreshData, PatchUserData, PresignUrl, UploadProfile
+from .request_models import LoginData, TokenRefreshData, PatchUserData, PresignUrl, UploadProfile
+from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse
 from .utils import Mfa, getImage
 from ..config import S3, S3_PUBLIC
 from ..exceptions import CustomBodyException
@@ -22,7 +24,7 @@ from ..models import User, GameSession, Update, AllowedMod
 app = FastAPI()
 
 
-@app.post("/auth/login")
+@app.post("/auth/login", response_model=AuthResponse)
 async def login(data: LoginData):
     query = Q(email=data.email) if "@" in data.email else Q(nickname=data.email)
     if (user := await User.get_or_none(query)) is None:
@@ -43,11 +45,11 @@ async def login(data: LoginData):
     return {
         "token": f"{user.id.hex}{session.id.hex}{session.token}",
         "refresh_token": f"{user.id.hex}{session.id.hex}{session.refresh_token}",
-        "expires_at": mktime(session.expires_at.timetuple()),
+        "expires_at": int(session.expires_at.timestamp()),
     }
 
 
-@app.post("/auth/refresh")
+@app.post("/auth/refresh", response_model=AuthResponse)
 async def refresh_session(data: TokenRefreshData, session: GameSession = Depends(sess_auth_expired)):
     user = session.user
 
@@ -65,7 +67,7 @@ async def refresh_session(data: TokenRefreshData, session: GameSession = Depends
     return {
         "token": f"{user.id.hex}{new_session.id.hex}{new_session.token}",
         "refresh_token": f"{user.id.hex}{new_session.id.hex}{new_session.refresh_token}",
-        "expires_at": mktime(new_session.expires_at.timetuple()),
+        "expires_at": int(new_session.expires_at.timestamp()),
     }
 
 
@@ -74,12 +76,14 @@ async def logout(session: GameSession = Depends(sess_auth_expired)):
     await session.delete()
 
 
-@app.get("/auth/verify")
+@app.get("/auth/verify", response_model=SessionExpirationResponse)
 async def check_session(session: GameSession = Depends(sess_auth_expired)):
-    return Response("{}", 207 if session.expired else 200)
+    return {
+        "expired": session.expired
+    }
 
 
-@app.get("/users/@me")
+@app.get("/users/@me", response_model=UserInfoResponse)
 async def get_me(user: User = Depends(user_auth)):
     return {
         "id": user.id,
@@ -88,7 +92,6 @@ async def get_me(user: User = Depends(user_auth)):
         "skin": user.skin_url,
         "cape": user.cape_url,
         "mfa": user.mfa_key is not None,
-        "signed_for_beta": user.signed_for_beta,
         "admin": user.admin,
     }
 
@@ -100,7 +103,7 @@ def reencode(file: BytesIO) -> BytesIO:
     return out
 
 
-async def edit_texture(user: User, name: str, image: str):
+async def edit_texture(user: User, name: str, image: str) -> None:
     if (texture := getImage(image)) is not None:
         with ThreadPoolExecutor() as pool:
             texture = await get_event_loop().run_in_executor(pool, reencode, texture)
@@ -113,7 +116,7 @@ async def edit_texture(user: User, name: str, image: str):
         await user.save(update_fields=[name])
 
 
-@app.patch("/users/@me")
+@app.patch("/users/@me", response_model=UserInfoResponse)
 async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
     await edit_texture(user, "skin", data.skin)
     await edit_texture(user, "cape", data.cape)
@@ -121,49 +124,9 @@ async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
     return await get_me(user)
 
 
-@app.get("/updates")
-async def get_updates(version: int = 0):
-    updates_ = await Update.filter(is_base=False, id__gt=version, pending=False).order_by("id")
-    updates = []
-    latestVersion = version
-    for upd in updates_:
-        latestVersion = max(latestVersion, upd.id)
-        updates.append({"os": upd.os, "arch": upd.arch, "files": upd.files})
-
-    return {
-        "version": latestVersion,
-        "updates": updates,
-    }
-
-
-@app.get("/updates/base")
-async def get_base_updates():
-    updates = await Update.filter(is_base=True, pending=False).order_by("id")
-    updates = [{"os": upd.os, "arch": upd.arch, "files": upd.files} for upd in updates]
-
-    return {
-        "version": -1,
-        "updates": updates,
-    }
-
-
-@app.get("/mods")
-async def get_allowed_mods():
-    ids: set[str] = set()
-    classes: set[str] = set()
-    for mod in await AllowedMod.all():
-        ids.add(mod.hashed_id)
-        classes.update(mod.classes)
-
-    return {
-        "ids": list(ids),
-        "classes": list(classes),
-    }
-
-
 @app.post("/logs", status_code=204)
 async def upload_logs(log: UploadFile, session: str | None = None, user: User = Depends(user_auth)):
-    date = datetime.utcnow().strftime("%d%m%Y")
+    date = datetime.now(UTC).strftime("%d%m%Y")
     if log.size > 1024 * 1024 * 16:
         return
 
@@ -182,33 +145,3 @@ async def presign_s3(data: PresignUrl, user: User = Depends(user_auth)):
     return {
         "url": S3_PUBLIC.share("wlands-updates", data.key, 60 * 60, True)
     }
-
-
-@app.post("/profiles/{profile}")
-async def upload_url(profile: str, data: UploadProfile, user: User = Depends(user_auth)):
-    if not user.admin:
-        raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
-
-    try:
-        manifest: dict = json.load(
-            await S3.download_object("wlands-updates", "/profiles/.metadata.json", in_memory=True)
-        )
-    except S3Exception as e:
-        manifest: dict = {"profiles": {}}
-        data.set_current = True
-
-    version = (manifest["profiles"][profile]["version"] + 1) if profile in manifest["profiles"] else 1
-    manifest["profiles"][profile] = {
-        "version": version,
-        "manifest": data.manifest_url,
-        "game_files": data.model_dump(include={"game_files"})["game_files"],
-        "profile_files": data.model_dump(include={"profile_files"})["profile_files"],
-    }
-    if data.set_current:
-        manifest["current"] = profile
-
-    file = BytesIO(json.dumps(manifest).encode("utf8"))
-    await S3.upload_object("wlands-updates", "/profiles/.metadata.json", file)
-
-    return manifest["profiles"][profile]
-

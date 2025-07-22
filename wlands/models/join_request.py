@@ -1,8 +1,8 @@
 from __future__ import annotations
-from tortoise import fields
+
+from tortoise import fields, Model
 
 from wlands import models
-from ._utils import Model
 
 
 class GameJoinRequest(Model):

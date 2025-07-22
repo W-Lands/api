@@ -64,7 +64,6 @@ async def get_user(user_id: UUID, authorization: str | None = Header(default=Non
         "skin": user.skin,
         "cape": user.cape,
         "mfa": user.mfa_key is not None,
-        "signed_for_beta": user.signed_for_beta,
         "banned": user.banned,
     }
 
@@ -94,7 +93,6 @@ async def edit_user(user_id: UUID, data: EditUser, authorization: str | None = H
         "skin": user.skin_url,
         "cape": user.cape_url,
         "mfa": user.mfa_key is not None,
-        "signed_for_beta": user.signed_for_beta,
         "banned": user.banned,
     }
 

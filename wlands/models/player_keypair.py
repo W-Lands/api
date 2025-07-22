@@ -7,10 +7,9 @@ from Crypto.Hash import SHA1
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from pytz import UTC
-from tortoise import fields
+from tortoise import fields, Model
 
 from wlands import models
-from ._utils import Model
 from ..config import YGGDRASIL_PRIVATE_KEY
 
 

@@ -62,8 +62,6 @@ async def player_certificates(user: User = Depends(mc_user_auth)):
         keypair.signature_v2 = keypair.generate_signature()
         await keypair.save(update_fields=["signature_v2"])
 
-    expMillis = str(keyPair.expires.timestamp()).split(".")[1].ljust(6, "0")
-    refMillis = str(keyPair.refreshes.timestamp()).split(".")[1].ljust(6, "0")
     expMillis = str(keypair.expires.timestamp()).split(".")[1].ljust(6, "0")
     refMillis = str(keypair.refreshes.timestamp()).split(".")[1].ljust(6, "0")
     return {

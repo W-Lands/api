@@ -1,7 +1,6 @@
-from tortoise import fields
+from tortoise import fields, Model
 
 from wlands import models
-from wlands.models._utils import Model
 
 
 class TgUser(Model):

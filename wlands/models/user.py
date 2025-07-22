@@ -21,7 +21,6 @@ class User(Model):
     skin: str | None = fields.UUIDField(null=True, default=None)
     cape: str | None = fields.UUIDField(null=True, default=None)
     mfa_key: str | None = fields.CharField(null=True, default=None, max_length=64)
-    signed_for_beta: bool = fields.BooleanField(default=False)
     banned: bool = fields.BooleanField(default=False)
     admin: bool = fields.BooleanField(default=False)
 

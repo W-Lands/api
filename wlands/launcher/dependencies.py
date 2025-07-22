@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
+from pytz import UTC
 
 from ..exceptions import ForbiddenException
 from ..models.game_user_session import GameSession
@@ -19,7 +20,7 @@ async def get_session(request: Request, allow_expired: bool):
 
     q = {"id": session_id, "user__id": user_id, "token": session_token}
     if not allow_expired:
-        q["expires_at__gt"] = datetime.utcnow()
+        q["expires_at__gt"] = datetime.now(UTC)
     if (session := await GameSession.get_or_none(**q).select_related("user")) is None:
         raise ForbiddenException("Invalid token.")
 

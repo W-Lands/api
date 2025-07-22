@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
-
-from tortoise import fields
-
-from ._utils import Model
+from tortoise import fields, Model
 
 
 class AllowedMod(Model):
