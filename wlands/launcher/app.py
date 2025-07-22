@@ -1,25 +1,23 @@
-import json
 from asyncio import get_event_loop
 from concurrent.futures.thread import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
-from time import mktime, time
+from time import time
 from uuid import uuid4
 
 from PIL import Image
 from bcrypt import checkpw
-from fastapi import FastAPI, Depends, Response, UploadFile
+from fastapi import FastAPI, Depends, UploadFile
 from pytz import UTC
-from s3lite import S3Exception
 from tortoise.expressions import Q
 
-from .dependencies import sess_auth_expired, user_auth
-from .request_models import LoginData, TokenRefreshData, PatchUserData, PresignUrl, UploadProfile
-from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse
+from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
+from .request_models import LoginData, TokenRefreshData, PatchUserData, PresignUrl
+from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo
 from .utils import Mfa, getImage
 from ..config import S3, S3_PUBLIC
 from ..exceptions import CustomBodyException
-from ..models import User, GameSession, Update, AllowedMod
+from ..models import User, GameSession, GameProfile, ProfileFile
 
 app = FastAPI()
 
@@ -72,19 +70,19 @@ async def refresh_session(data: TokenRefreshData, session: GameSession = Depends
 
 
 @app.post("/auth/logout", status_code=204)
-async def logout(session: GameSession = Depends(sess_auth_expired)):
+async def logout(session: AuthSessExpDep):
     await session.delete()
 
 
 @app.get("/auth/verify", response_model=SessionExpirationResponse)
-async def check_session(session: GameSession = Depends(sess_auth_expired)):
+async def check_session(session: AuthSessExpDep):
     return {
         "expired": session.expired
     }
 
 
 @app.get("/users/@me", response_model=UserInfoResponse)
-async def get_me(user: User = Depends(user_auth)):
+async def get_me(user: AuthUserDep):
     return {
         "id": user.id,
         "email": user.email,
@@ -117,7 +115,7 @@ async def edit_texture(user: User, name: str, image: str) -> None:
 
 
 @app.patch("/users/@me", response_model=UserInfoResponse)
-async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
+async def edit_me(data: PatchUserData, user: AuthUserDep):
     await edit_texture(user, "skin", data.skin)
     await edit_texture(user, "cape", data.cape)
 
@@ -125,7 +123,7 @@ async def edit_me(data: PatchUserData, user: User = Depends(user_auth)):
 
 
 @app.post("/logs", status_code=204)
-async def upload_logs(log: UploadFile, session: str | None = None, user: User = Depends(user_auth)):
+async def upload_logs(log: UploadFile, user: AuthUserDep, session: str | None = None):
     date = datetime.now(UTC).strftime("%d%m%Y")
     if log.size > 1024 * 1024 * 16:
         return
@@ -138,10 +136,38 @@ async def upload_logs(log: UploadFile, session: str | None = None, user: User = 
 
 
 @app.post("/storage/presign")
-async def presign_s3(data: PresignUrl, user: User = Depends(user_auth)):
+async def presign_s3(data: PresignUrl, user: AuthUserDep):
     if not user.admin:
         raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
 
     return {
         "url": S3_PUBLIC.share("wlands-updates", data.key, 60 * 60, True)
     }
+
+
+@app.get("/profiles", response_model=list[ProfileInfo])
+async def get_profiles(user: AuthUserOptDep, with_manifest: bool = True, only_public: bool = True):
+    only_public = only_public and user is not None and user.admin
+    profiles_q = Q(public=True) if only_public else Q()
+
+    profiles = await GameProfile.filter(profiles_q).order_by("-updated_at")
+
+    return [
+        profile.to_json(with_manifest)
+        for profile in profiles
+    ]
+
+
+@app.get("/profiles/{profile_id}/files", response_model=list[ProfileFileInfo])
+async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 0):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise CustomBodyException(404, {"profile_id": ["Unknown profile."]})
+    min_date = max(int(profile.created_at.timestamp()), min_date)
+    max_date = min(int(profile.updated_at.timestamp()), max_date)
+
+    files = await ProfileFile.filter(profile=profile, created__at__gte=min_date, created_at__lte=max_date)
+
+    return [
+        file.to_json()
+        for file in files
+    ]

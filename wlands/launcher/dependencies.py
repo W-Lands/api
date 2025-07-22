@@ -1,14 +1,16 @@
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import Request
 from pytz import UTC
 
 from ..exceptions import ForbiddenException
+from ..models import User
 from ..models.game_user_session import GameSession
 
 
-async def get_session(request: Request, allow_expired: bool):
+async def get_session(request: Request, allow_expired: bool) -> GameSession:
     token = request.headers.get("authorization")
 
     if not token or len(token) < 96:
@@ -30,17 +32,35 @@ async def get_session(request: Request, allow_expired: bool):
     return session
 
 
-async def sess_auth(request: Request):
+async def sess_auth(request: Request) -> GameSession:
     return await get_session(request, False)
 
 
-async def sess_auth_expired(request: Request):
+async def sess_auth_expired(request: Request) -> GameSession:
     return await get_session(request, True)
 
 
-async def user_auth(request: Request):
-    return (await get_session(request, False)).user
+async def user_auth(request: Request) -> User:
+    session = await sess_auth(request)
+    return session.user
 
 
-async def user_auth_expired(request: Request):
-    return (await get_session(request, True)).user
+async def user_auth_expired(request: Request) -> User:
+    session = await sess_auth_expired(request)
+    return session.user
+
+
+async def user_auth_maybe(request: Request) -> User | None:
+    try:
+        session = await sess_auth(request)
+    except ForbiddenException:
+        return None
+    else:
+        return session.user
+
+
+AuthSessDep = Annotated[GameSession, sess_auth]
+AuthSessExpDep = Annotated[GameSession, sess_auth_expired]
+AuthUserDep = Annotated[User, user_auth]
+AuthUserExpDep = Annotated[User, user_auth_expired]
+AuthUserOptDep = Annotated[User | None, user_auth_maybe]
