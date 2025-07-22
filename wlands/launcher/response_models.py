@@ -1,5 +1,9 @@
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel
 
+from wlands.launcher.manifest_models import VersionManifest
 from wlands.models import ProfileFileType
 
 
@@ -29,7 +33,7 @@ class ProfileInfo(BaseModel):
     description: str
     created_at: int
     updated_at: int
-    version_manifest: dict | None  # TODO: type annotate manifest
+    version_manifest: VersionManifest | None
 
 
 class ProfileFileInfo(BaseModel):
