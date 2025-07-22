@@ -103,12 +103,14 @@ def reencode(file: BytesIO) -> BytesIO:
 async def edit_texture(user: User, name: str, image: str):
     if (texture := getImage(image)) is not None:
         with ThreadPoolExecutor() as pool:
-            texture = await get_event_loop().run_in_executor(pool, lambda: reencode(texture))
+            texture = await get_event_loop().run_in_executor(pool, reencode, texture)
         texture_id = uuid4()
         await S3.upload_object("wlands", f"{name}s/{user.id}/{texture_id}.png", texture)
-        await user.update(**{name: texture_id})
+        setattr(user, name, texture_id)
+        await user.save(update_fields=[name])
     elif image == "":
-        await user.update(**{name: None})
+        setattr(user, name, None)
+        await user.save(update_fields=[name])
 
 
 @app.patch("/users/@me")

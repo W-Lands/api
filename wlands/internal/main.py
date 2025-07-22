@@ -81,7 +81,8 @@ async def edit_user(user_id: UUID, data: EditUser, authorization: str | None = H
         if data.password is None or not checkpw(data.password.encode("utf8"), user.password.encode("utf8")):
             raise CustomBodyException(400, {"error_message": "Old password is wrong."})
 
-        await user.update(password=hashpw(data.password.encode("utf8"), gensalt()).decode("utf8"))
+        user.password = hashpw(data.password.encode("utf8"), gensalt()).decode("utf8")
+        await user.save(update_fields=["password"])
 
     await edit_texture(user, "skin", data.skin)
     await edit_texture(user, "cape", data.cape)
@@ -109,7 +110,8 @@ async def ban_user(user_id: UUID, authorization: str | None = Header(default=Non
     if user.banned:
         raise CustomBodyException(400, {"error_message": "User already banned."})
 
-    await user.update(banned=True)
+    user.banned = True
+    await user.save(update_fields=["banned"])
     await GameSession.filter(user=user).delete()
     await UserSession.filter(user=user).delete()
 
@@ -125,7 +127,8 @@ async def ban_user(user_id: UUID, authorization: str | None = Header(default=Non
     if not user.banned:
         raise CustomBodyException(400, {"error_message": "User is not banned."})
 
-    await user.update(banned=False)
+    user.banned = False
+    await user.save(update_fields=["banned"])
 
 
 @app.post("/updates/new")
@@ -158,7 +161,7 @@ async def upload_file(update_id: int, file_path: str, request: Request, authoriz
     update.files.append(
         {"url": f"{S3_ENDPOINT}/wlands-updates/{update_id}/{sha1_hash}", "path": file_path, "hash": sha1_hash}
     )
-    await update.update()
+    await update.save(update_fields=["files"])
 
     
 @app.post("/updates/{update_id}", status_code=204)
@@ -171,4 +174,5 @@ async def save_update(update_id: int, authorization: str | None = Header(default
     if not update.pending:
         raise CustomBodyException(400, {"error_message": "Cannot edit this update"})
 
-    await update.update(pending=False)
+    update.pending = False
+    await update.save(update_fields=["pending"])

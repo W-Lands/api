@@ -48,32 +48,35 @@ async def player_attributes():
 
 @app.post("/services/player/certificates")
 async def player_certificates(user: User = Depends(mc_user_auth)):
-    if (keyPair := await PlayerKeyPair.get_or_none(user=user)) is not None and keyPair.can_be_refreshed:
-        await keyPair.delete()
-        keyPair = None
+    if (keypair := await PlayerKeyPair.get_or_none(user=user)) is not None and keypair.can_be_refreshed:
+        await keypair.delete()
+        keypair = None
 
-    if keyPair is None:
+    if keypair is None:
         priv = RSA.generate(2048)
         pub = priv.publickey()
-        keyPair = await PlayerKeyPair.create(
+        keypair = await PlayerKeyPair.create(
             user=user, private_key=priv.export_key('PEM', pkcs=8).decode("utf8"),
             public_key=pub.export_key('PEM').decode("utf8"), signature_v2="AA=="
         )
-        await keyPair.update(signature_v2=keyPair.generate_signature())
+        keypair.signature_v2 = keypair.generate_signature()
+        await keypair.save(update_fields=["signature_v2"])
 
     expMillis = str(keyPair.expires.timestamp()).split(".")[1].ljust(6, "0")
     refMillis = str(keyPair.refreshes.timestamp()).split(".")[1].ljust(6, "0")
+    expMillis = str(keypair.expires.timestamp()).split(".")[1].ljust(6, "0")
+    refMillis = str(keypair.refreshes.timestamp()).split(".")[1].ljust(6, "0")
     return {
         "keyPair": {
-            "privateKey": keyPair.private_key.replace("BEGIN PRIVATE KEY", "BEGIN RSA PRIVATE KEY")
+            "privateKey": keypair.private_key.replace("BEGIN PRIVATE KEY", "BEGIN RSA PRIVATE KEY")
             .replace("END PRIVATE KEY", "END RSA PRIVATE KEY"),
-            "publicKey": keyPair.public_key.replace("BEGIN PUBLIC KEY", "BEGIN RSA PUBLIC KEY")
+            "publicKey": keypair.public_key.replace("BEGIN PUBLIC KEY", "BEGIN RSA PUBLIC KEY")
             .replace("END PUBLIC KEY", "END RSA PUBLIC KEY"),
         },
-        "publicKeySignature": keyPair.signature,
-        "publicKeySignatureV2": keyPair.signature_v2,
-        "expiresAt": keyPair.expires.strftime("%Y-%m-%dT%H:%M:%S.") + expMillis + "Z",
-        "refreshedAfter": keyPair.refreshes.strftime("%Y-%m-%dT%H:%M:%S.") + refMillis + "Z",
+        "publicKeySignature": keypair.signature,
+        "publicKeySignatureV2": keypair.signature_v2,
+        "expiresAt": keypair.expires.strftime("%Y-%m-%dT%H:%M:%S.") + expMillis + "Z",
+        "refreshedAfter": keypair.refreshes.strftime("%Y-%m-%dT%H:%M:%S.") + refMillis + "Z",
     }
 
 
