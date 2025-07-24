@@ -67,6 +67,40 @@ async def admin_login_post(form: LoginForm = fastui_form(LoginForm)) -> list[Any
     ]
 
 
+def make_page(title: str, *components: AnyComponent) -> list[AnyComponent]:
+    return [
+        c.PageTitle(text=f"W-Lands - {title}"),
+        c.Navbar(
+            title="W-Lands",
+            title_event=GoToEvent(url=PREFIX),
+            start_links=[
+                c.Link(
+                    components=[c.Text(text="Users")],
+                    on_click=GoToEvent(url=f"{PREFIX}/users"),
+                    active=f'startswith:{PREFIX}/users',
+                ),
+                c.Link(
+                    components=[c.Text(text="Profiles")],
+                    on_click=GoToEvent(url=f"{PREFIX}/profiles"),
+                    active=f'startswith:{PREFIX}/profiles',
+                ),
+            ],
+            end_links=[
+                c.Link(
+                    components=[c.Text(text="Logout")],
+                    on_click=AuthEvent(token=False, url=f"{PREFIX}/login")
+                ),
+            ],
+        ),
+        c.Page(
+            components=[
+                c.Heading(text=title),
+                *components,
+            ],
+        ),
+    ]
+
+
 @app_get_fastui("/api/admin/users/", dependencies=[Depends(admin_auth)])
 @app_get_fastui("/api/admin/users", dependencies=[Depends(admin_auth)])
 async def users_table(page: int = 1) -> list[AnyComponent]:
@@ -77,59 +111,56 @@ async def users_table(page: int = 1) -> list[AnyComponent]:
         for user in await User.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
     ]
 
-    return [
-        c.Page(
-            components=[
-                c.Heading(text="Users", level=2),
-                c.Button(text="Create user", on_click=PageEvent(name="create-modal")),
-                c.Table(
-                    data=users,
-                    data_model=UserPydantic,
-                    columns=[
-                        DisplayLookup(field="id", on_click=GoToEvent(url=f"{PREFIX}/users/{{id}}/")),
-                        DisplayLookup(field="email"),
-                        DisplayLookup(field="nickname"),
-                        DisplayLookup(field="banned"),
-                    ],
-                ),
-                c.Pagination(page=page, page_size=PAGE_SIZE, total=await User.filter().count()),
+    return make_page(
+        "Users",
 
-                c.Modal(
-                    title="Create user",
-                    body=[
-                        c.Form(
-                            form_fields=[
-                                c.FormFieldInput(
-                                    name="nickname",
-                                    title="Nickname",
-                                    required=True,
-                                ),
-                                c.FormFieldInput(
-                                    name="password",
-                                    title="Password",
-                                    html_type="password",
-                                    required=True,
-                                ),
-                            ],
-                            loading=[c.Spinner(text="Creating user...")],
-                            submit_url=f"{PREFIX_API}/admin/users",
-                            submit_trigger=PageEvent(name="create-form-submit"),
-                            footer=[],
-                        ),
-                    ],
-                    footer=[
-                        c.Button(
-                            text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
-                        ),
-                        c.Button(
-                            text="Create", on_click=PageEvent(name="create-form-submit")
-                        ),
-                    ],
-                    open_trigger=PageEvent(name="create-modal"),
-                ),
-            ]
+        c.Button(text="Create user", on_click=PageEvent(name="create-modal")),
+        c.Table(
+            data=users,
+            data_model=UserPydantic,
+            columns=[
+                DisplayLookup(field="id", on_click=GoToEvent(url=f"{PREFIX}/users/{{id}}/")),
+                DisplayLookup(field="email"),
+                DisplayLookup(field="nickname"),
+                DisplayLookup(field="banned"),
+            ],
         ),
-    ]
+        c.Pagination(page=page, page_size=PAGE_SIZE, total=await User.filter().count()),
+
+        c.Modal(
+            title="Create user",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="nickname",
+                            title="Nickname",
+                            required=True,
+                        ),
+                        c.FormFieldInput(
+                            name="password",
+                            title="Password",
+                            html_type="password",
+                            required=True,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Creating user...")],
+                    submit_url=f"{PREFIX_API}/admin/users",
+                    submit_trigger=PageEvent(name="create-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
+                ),
+                c.Button(
+                    text="Create", on_click=PageEvent(name="create-form-submit")
+                ),
+            ],
+            open_trigger=PageEvent(name="create-modal"),
+        ),
+    )
 
 
 @app_post_fastui("/api/admin/users/", dependencies=[Depends(admin_auth)])
@@ -192,81 +223,78 @@ async def user_info(user_id: UUID) -> list[AnyComponent]:
     ban_unban = "Unban" if user.banned else "Ban"
 
     user = await UserPydantic.from_tortoise_orm(user)
-    return [
-        c.Page(
-            components=[
-                c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/users")),
-                c.Heading(text=user.nickname, level=2),
-                c.Details(data=user, fields=[
-                    DisplayLookup(field="id"),
-                    DisplayLookup(field="email"),
-                    DisplayLookup(field="nickname"),
-                    DisplayLookup(field="signed_for_beta"),
-                    DisplayLookup(field="banned"),
-                    DisplayLookup(field="admin"),
-                    DisplayLookup(field="has_mfa"),
-                ]),
-                c.Div(components=[
-                    c.Button(
-                        text=ban_unban, named_style="warning", on_click=PageEvent(name="ban-modal")
-                    ),
-                    c.Button(
-                        text="Edit", on_click=PageEvent(name="edit-modal")
-                    ),
-                ]),
-                c.Modal(
-                    title="Edit user",
-                    body=[
-                        c.Form(
-                            form_fields=[
-                                c.FormFieldInput(
-                                    name="nickname",
-                                    title="Nickname",
-                                    initial=user.nickname,
-                                    required=True,
-                                ),
-                            ],
-                            loading=[c.Spinner(text="Editing...")],
-                            submit_url=f"{PREFIX_API}/admin/users/{user.id}",
-                            submit_trigger=PageEvent(name="edit-form-submit"),
-                            footer=[],
+    return make_page(
+        user.nickname,
+
+        c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/users")),
+        c.Details(data=user, fields=[
+            DisplayLookup(field="id"),
+            DisplayLookup(field="email"),
+            DisplayLookup(field="nickname"),
+            DisplayLookup(field="signed_for_beta"),
+            DisplayLookup(field="banned"),
+            DisplayLookup(field="admin"),
+            DisplayLookup(field="has_mfa"),
+        ]),
+        c.Div(components=[
+            c.Button(
+                text=ban_unban, named_style="warning", on_click=PageEvent(name="ban-modal")
+            ),
+            c.Button(
+                text="Edit", on_click=PageEvent(name="edit-modal")
+            ),
+        ]),
+        c.Modal(
+            title="Edit user",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="nickname",
+                            title="Nickname",
+                            initial=user.nickname,
+                            required=True,
                         ),
                     ],
-                    footer=[
-                        c.Button(
-                            text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
-                        ),
-                        c.Button(
-                            text="Submit", on_click=PageEvent(name="edit-form-submit")
-                        ),
-                    ],
-                    open_trigger=PageEvent(name="edit-modal"),
+                    loading=[c.Spinner(text="Editing...")],
+                    submit_url=f"{PREFIX_API}/admin/users/{user.id}",
+                    submit_trigger=PageEvent(name="edit-form-submit"),
+                    footer=[],
                 ),
-                c.Modal(
-                    title=f"{ban_unban} user?",
-                    body=[
-                        c.Paragraph(text="Are you sure you want to ban this user?"),
-                        c.Form(
-                            form_fields=[],
-                            loading=[c.Spinner(text="...")],
-                            submit_url=f"{PREFIX_API}/admin/users/{user.id}/{ban_unban}",
-                            submit_trigger=PageEvent(name="ban-form-submit"),
-                            footer=[],
-                        ),
-                    ],
-                    footer=[
-                        c.Button(
-                            text="Cancel", named_style="secondary", on_click=PageEvent(name="ban-form", clear=True)
-                        ),
-                        c.Button(
-                            text=ban_unban, on_click=PageEvent(name="ban-form-submit")
-                        ),
-                    ],
-                    open_trigger=PageEvent(name="ban-modal"),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
                 ),
-            ]
+                c.Button(
+                    text="Submit", on_click=PageEvent(name="edit-form-submit")
+                ),
+            ],
+            open_trigger=PageEvent(name="edit-modal"),
         ),
-    ]
+        c.Modal(
+            title=f"{ban_unban} user?",
+            body=[
+                c.Paragraph(text="Are you sure you want to ban this user?"),
+                c.Form(
+                    form_fields=[],
+                    loading=[c.Spinner(text="...")],
+                    submit_url=f"{PREFIX_API}/admin/users/{user.id}/{ban_unban}",
+                    submit_trigger=PageEvent(name="ban-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="ban-form", clear=True)
+                ),
+                c.Button(
+                    text=ban_unban, on_click=PageEvent(name="ban-form-submit")
+                ),
+            ],
+            open_trigger=PageEvent(name="ban-modal"),
+        ),
+    )
 
 
 @app_get_fastui("/api/admin/profiles/", dependencies=[Depends(admin_auth)])
@@ -279,71 +307,68 @@ async def profiles_table(page: int = 1) -> list[AnyComponent]:
         for profile in await GameProfile.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
     ]
 
-    return [
-        c.Page(
-            components=[
-                c.Heading(text="Profiles", level=2),
-                c.Button(text="Create profile", on_click=PageEvent(name="create-modal")),
-                c.Table(
-                    data=profiles,
-                    data_model=ProfilePydantic,
-                    columns=[
-                        DisplayLookup(field="id", on_click=GoToEvent(url=f"{PREFIX}/profiles/{{id}}/")),
-                        DisplayLookup(field="name"),
-                        DisplayLookup(field="created_at"),
-                        DisplayLookup(field="updated_at"),
-                        DisplayLookup(field="public"),
-                    ],
-                ),
-                c.Pagination(page=page, page_size=PAGE_SIZE, total=await GameProfile.filter().count()),
+    return make_page(
+        "Profiles",
 
-                c.Modal(
-                    title="Create user",
-                    body=[
-                        c.Form(
-                            form_fields=[
-                                c.FormFieldInput(
-                                    name="name",
-                                    title="Name",
-                                    required=True,
-                                ),
-                                f.FormFieldTextarea(
-                                    name="description",
-                                    title="Description",
-                                    required=True,
-                                ),
-                                c.FormFieldFile(
-                                    name="manifest",
-                                    title="Manifest",
-                                    accept=".json",
-                                    multiple=False,
-                                    required=True,
-                                ),
-                                f.FormFieldBoolean(
-                                    name="public",
-                                    title="Public",
-                                    initial=False,
-                                ),
-                            ],
-                            loading=[c.Spinner(text="Creating profile...")],
-                            submit_url=f"{PREFIX_API}/admin/profiles",
-                            submit_trigger=PageEvent(name="create-form-submit"),
-                            footer=[],
-                        ),
-                    ],
-                    footer=[
-                        c.Button(
-                            text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
-                        ),
-                        c.Button(
-                            text="Create", on_click=PageEvent(name="create-form-submit")
-                        ),
-                    ],
-                    open_trigger=PageEvent(name="create-modal"),
-                ),
-            ]
+        c.Button(text="Create profile", on_click=PageEvent(name="create-modal")),
+        c.Table(
+            data=profiles,
+            data_model=ProfilePydantic,
+            columns=[
+                DisplayLookup(field="id", on_click=GoToEvent(url=f"{PREFIX}/profiles/{{id}}/")),
+                DisplayLookup(field="name"),
+                DisplayLookup(field="created_at"),
+                DisplayLookup(field="updated_at"),
+                DisplayLookup(field="public"),
+            ],
         ),
-    ]
+        c.Pagination(page=page, page_size=PAGE_SIZE, total=await GameProfile.filter().count()),
+
+        c.Modal(
+            title="Create user",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="name",
+                            title="Name",
+                            required=True,
+                        ),
+                        f.FormFieldTextarea(
+                            name="description",
+                            title="Description",
+                            required=True,
+                        ),
+                        c.FormFieldFile(
+                            name="manifest",
+                            title="Manifest",
+                            accept=".json",
+                            multiple=False,
+                            required=True,
+                        ),
+                        f.FormFieldBoolean(
+                            name="public",
+                            title="Public",
+                            initial=False,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Creating profile...")],
+                    submit_url=f"{PREFIX_API}/admin/profiles",
+                    submit_trigger=PageEvent(name="create-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
+                ),
+                c.Button(
+                    text="Create", on_click=PageEvent(name="create-form-submit")
+                ),
+            ],
+            open_trigger=PageEvent(name="create-modal"),
+        ),
+    )
 
 
 @app_post_fastui("/api/admin/profiles/")
@@ -406,101 +431,98 @@ async def profile_info(profile_id: int) -> list[AnyComponent]:
         raise HTTPException(status_code=404, detail="User not found")
 
     profile = await ProfilePydantic.from_tortoise_orm(profile)
-    return [
-        c.Page(
-            components=[
-                c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/profiles")),
-                c.Heading(text=profile.name, level=2),
-                c.Details(data=profile, fields=[
-                    DisplayLookup(field="id"),
-                    DisplayLookup(field="name"),
-                    DisplayLookup(field="description"),
-                    DisplayLookup(field="created_at"),
-                    DisplayLookup(field="updated_at"),
-                    DisplayLookup(field="public"),
-                ]),
-                c.Div(components=[
-                    c.Button(
-                        text="Edit", on_click=PageEvent(name="edit-modal")
-                    ),
-                    c.Button(
-                        text="Upload manifest", on_click=PageEvent(name="manifest-modal")
-                    ),
-                ]),
-                c.Modal(
-                    title="Edit profile",
-                    body=[
-                        c.Form(
-                            form_fields=[
-                                c.FormFieldInput(
-                                    name="name",
-                                    title="Name",
-                                    required=True,
-                                    initial=profile.name,
-                                ),
-                                f.FormFieldTextarea(
-                                    name="description",
-                                    title="Description",
-                                    required=True,
-                                    initial=profile.description,
-                                ),
-                                f.FormFieldBoolean(
-                                    name="public",
-                                    title="Public",
-                                    required=False,
-                                    initial=profile.public,
-                                ),
-                            ],
-                            loading=[c.Spinner(text="Editing...")],
-                            submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}",
-                            submit_trigger=PageEvent(name="edit-form-submit"),
-                            footer=[],
-                        ),
-                    ],
-                    footer=[
-                        c.Button(
-                            text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
-                        ),
-                        c.Button(
-                            text="Submit", on_click=PageEvent(name="edit-form-submit")
-                        ),
-                    ],
-                    open_trigger=PageEvent(name="edit-modal"),
-                ),
+    return make_page(
+        profile.name,
 
-                c.Modal(
-                    title="Upload manifest",
-                    body=[
-                        c.Text(text="This will also make all file changes available"),
-                        c.Form(
-                            form_fields=[
-                                c.FormFieldFile(
-                                    name="manifest",
-                                    title="Manifest",
-                                    accept=".json",
-                                    multiple=False,
-                                    required=True,
-                                ),
-                            ],
-                            loading=[c.Spinner(text="Uploading...")],
-                            submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}/manifest",
-                            submit_trigger=PageEvent(name="manifest-form-submit"),
-                            footer=[],
+        c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/profiles")),
+        c.Details(data=profile, fields=[
+            DisplayLookup(field="id"),
+            DisplayLookup(field="name"),
+            DisplayLookup(field="description"),
+            DisplayLookup(field="created_at"),
+            DisplayLookup(field="updated_at"),
+            DisplayLookup(field="public"),
+        ]),
+        c.Div(components=[
+            c.Button(
+                text="Edit", on_click=PageEvent(name="edit-modal")
+            ),
+            c.Button(
+                text="Upload manifest", on_click=PageEvent(name="manifest-modal")
+            ),
+        ]),
+        c.Modal(
+            title="Edit profile",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="name",
+                            title="Name",
+                            required=True,
+                            initial=profile.name,
+                        ),
+                        f.FormFieldTextarea(
+                            name="description",
+                            title="Description",
+                            required=True,
+                            initial=profile.description,
+                        ),
+                        f.FormFieldBoolean(
+                            name="public",
+                            title="Public",
+                            required=False,
+                            initial=profile.public,
                         ),
                     ],
-                    footer=[
-                        c.Button(
-                            text="Cancel", named_style="secondary", on_click=PageEvent(name="manifest-form", clear=True)
-                        ),
-                        c.Button(
-                            text="Submit", on_click=PageEvent(name="manifest-form-submit")
-                        ),
-                    ],
-                    open_trigger=PageEvent(name="manifest-modal"),
+                    loading=[c.Spinner(text="Editing...")],
+                    submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}",
+                    submit_trigger=PageEvent(name="edit-form-submit"),
+                    footer=[],
                 ),
-            ]
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
+                ),
+                c.Button(
+                    text="Submit", on_click=PageEvent(name="edit-form-submit")
+                ),
+            ],
+            open_trigger=PageEvent(name="edit-modal"),
         ),
-    ]
+
+        c.Modal(
+            title="Upload manifest",
+            body=[
+                c.Text(text="This will also make all file changes available"),
+                c.Form(
+                    form_fields=[
+                        c.FormFieldFile(
+                            name="manifest",
+                            title="Manifest",
+                            accept=".json",
+                            multiple=False,
+                            required=True,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Uploading...")],
+                    submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}/manifest",
+                    submit_trigger=PageEvent(name="manifest-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="manifest-form", clear=True)
+                ),
+                c.Button(
+                    text="Submit", on_click=PageEvent(name="manifest-form-submit")
+                ),
+            ],
+            open_trigger=PageEvent(name="manifest-modal"),
+        ),
+    )
 
 
 @app.get("/{path:path}")
