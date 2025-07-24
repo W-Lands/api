@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Request
+from fastapi import Request, Depends
 from pytz import UTC
 
 from ..exceptions import ForbiddenException
@@ -59,8 +59,8 @@ async def user_auth_maybe(request: Request) -> User | None:
         return session.user
 
 
-AuthSessDep = Annotated[GameSession, sess_auth]
-AuthSessExpDep = Annotated[GameSession, sess_auth_expired]
-AuthUserDep = Annotated[User, user_auth]
-AuthUserExpDep = Annotated[User, user_auth_expired]
-AuthUserOptDep = Annotated[User | None, user_auth_maybe]
+AuthSessDep = Annotated[GameSession, Depends(sess_auth)]
+AuthSessExpDep = Annotated[GameSession, Depends(sess_auth_expired)]
+AuthUserDep = Annotated[User, Depends(user_auth)]
+AuthUserExpDep = Annotated[User, Depends(user_auth_expired)]
+AuthUserOptDep = Annotated[User | None, Depends(user_auth_maybe)]

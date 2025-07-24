@@ -17,12 +17,12 @@ class VersionManifestRule(BaseModel):
 
 class VersionManifestArgument(BaseModel):
     rules: list[VersionManifestRule] | None = None
-    values: list[str]
+    value: list[str] | str | None = None
 
 
 class VersionManifestArguments(BaseModel):
-    game: list[VersionManifestArgument]
-    jvm: list[VersionManifestArgument]
+    game: list[VersionManifestArgument | str]
+    jvm: list[VersionManifestArgument | str]
 
 
 class VersionManifestLibraryDownloadArtifact(BaseModel):

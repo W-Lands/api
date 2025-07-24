@@ -3,7 +3,6 @@ from uuid import UUID
 
 from fastapi import Header
 
-from ..exceptions import ForbiddenException
 from ..models import UserSession, User
 
 

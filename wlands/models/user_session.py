@@ -4,10 +4,9 @@ from datetime import datetime, timedelta
 from os import urandom
 from uuid import uuid4, UUID
 
-from tortoise import fields
+from tortoise import fields, Model
 
 from wlands import models
-from ._utils import Model
 
 
 def random_hex_64b() -> str:

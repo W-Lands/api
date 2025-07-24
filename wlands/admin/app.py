@@ -1,18 +1,22 @@
+from datetime import datetime
 from functools import partial
 from time import time
 from uuid import UUID
 
 from bcrypt import checkpw, hashpw, gensalt
-from fastapi import FastAPI, Depends, Request, HTTPException, Form
+from fastapi import FastAPI, Depends, Request, HTTPException, Form, UploadFile
 from fastui import prebuilt_html, FastUI, AnyComponent, components as c
 from fastui.components.display import DisplayLookup
+from fastui.components import forms as f
 from fastui.events import GoToEvent, AuthEvent, PageEvent
-from fastui.forms import fastui_form
+from fastui.forms import fastui_form, FormFile
 from pydantic import BaseModel, EmailStr, Field, SecretStr
+from pytz import UTC
 from starlette.responses import HTMLResponse, JSONResponse
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
-from wlands.models import User, UserSession, UserPydantic, GameSession
+from wlands.launcher.manifest_models import VersionManifest
+from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -23,7 +27,7 @@ app_post_fastui = partial(app.post, response_model=FastUI, response_model_exclud
 
 class LoginForm(BaseModel):
     email: EmailStr = Field(title='Email Address', json_schema_extra={'autocomplete': 'email'})
-    password: SecretStr = Field(title='Password', json_schema_extra={'autocomplete': 'current-password'})
+    password: SecretStr = Field(title='Password', json_schema_extra={'autocomplete': 'password'})
 
 
 @app_get_fastui("/api/admin/login/")
@@ -70,7 +74,7 @@ async def users_table(page: int = 1) -> list[AnyComponent]:
 
     users = [
         await UserPydantic.from_tortoise_orm(user)
-        for user in await User.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE)
+        for user in await User.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
     ]
 
     return [
@@ -259,6 +263,240 @@ async def user_info(user_id: UUID) -> list[AnyComponent]:
                         ),
                     ],
                     open_trigger=PageEvent(name="ban-modal"),
+                ),
+            ]
+        ),
+    ]
+
+
+@app_get_fastui("/api/admin/profiles/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/profiles", dependencies=[Depends(admin_auth)])
+async def profiles_table(page: int = 1) -> list[AnyComponent]:
+    PAGE_SIZE = 25
+
+    profiles = [
+        await ProfilePydantic.from_tortoise_orm(profile)
+        for profile in await GameProfile.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
+    ]
+
+    return [
+        c.Page(
+            components=[
+                c.Heading(text="Profiles", level=2),
+                c.Button(text="Create profile", on_click=PageEvent(name="create-modal")),
+                c.Table(
+                    data=profiles,
+                    data_model=ProfilePydantic,
+                    columns=[
+                        DisplayLookup(field="id", on_click=GoToEvent(url=f"{PREFIX}/profiles/{{id}}/")),
+                        DisplayLookup(field="name"),
+                        DisplayLookup(field="created_at"),
+                        DisplayLookup(field="updated_at"),
+                        DisplayLookup(field="public"),
+                    ],
+                ),
+                c.Pagination(page=page, page_size=PAGE_SIZE, total=await GameProfile.filter().count()),
+
+                c.Modal(
+                    title="Create user",
+                    body=[
+                        c.Form(
+                            form_fields=[
+                                c.FormFieldInput(
+                                    name="name",
+                                    title="Name",
+                                    required=True,
+                                ),
+                                f.FormFieldTextarea(
+                                    name="description",
+                                    title="Description",
+                                    required=True,
+                                ),
+                                c.FormFieldFile(
+                                    name="manifest",
+                                    title="Manifest",
+                                    accept=".json",
+                                    multiple=False,
+                                    required=True,
+                                ),
+                                f.FormFieldBoolean(
+                                    name="public",
+                                    title="Public",
+                                    initial=False,
+                                ),
+                            ],
+                            loading=[c.Spinner(text="Creating profile...")],
+                            submit_url=f"{PREFIX_API}/admin/profiles",
+                            submit_trigger=PageEvent(name="create-form-submit"),
+                            footer=[],
+                        ),
+                    ],
+                    footer=[
+                        c.Button(
+                            text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
+                        ),
+                        c.Button(
+                            text="Create", on_click=PageEvent(name="create-form-submit")
+                        ),
+                    ],
+                    open_trigger=PageEvent(name="create-modal"),
+                ),
+            ]
+        ),
+    ]
+
+
+@app_post_fastui("/api/admin/profiles/")
+@app_post_fastui("/api/admin/profiles")
+async def create_user(
+        admin: User = Depends(admin_auth),
+        name: str = Form(), description: str = Form(), public: bool = Form(default=False),
+        manifest: UploadFile = FormFile(accept="application/json,.json", max_size=256 * 1024),
+):
+    manifest_model = VersionManifest.model_validate_json(await manifest.read())
+    profile = await GameProfile.create(
+        name=name,
+        description=description,
+        creator=admin,
+        version_manifest=manifest_model.model_dump(),
+        public=public,
+    )
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}", dependencies=[Depends(admin_auth)])
+async def edit_profile(
+        profile_id: int,
+        name: str = Form(), description: str = Form(), public: bool = Form(default=False),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    profile.name = name
+    profile.description = description
+    profile.public = public
+    await profile.save(update_fields=["name", "description", "public"])
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/manifest/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/manifest", dependencies=[Depends(admin_auth)])
+async def edit_profile_manifest(
+        profile_id: int,
+        manifest: UploadFile = FormFile(accept="application/json,.json", max_size=256 * 1024),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    manifest_model = VersionManifest.model_validate_json(await manifest.read())
+    profile.version_manifest = manifest_model.model_dump()
+    profile.updated_at = datetime.now(UTC)
+    await profile.save(update_fields=["version_manifest", "updated_at"])
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
+
+
+@app_get_fastui("/api/admin/profiles/{profile_id}/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/profiles/{profile_id}", dependencies=[Depends(admin_auth)])
+async def profile_info(profile_id: int) -> list[AnyComponent]:
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profile = await ProfilePydantic.from_tortoise_orm(profile)
+    return [
+        c.Page(
+            components=[
+                c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/profiles")),
+                c.Heading(text=profile.name, level=2),
+                c.Details(data=profile, fields=[
+                    DisplayLookup(field="id"),
+                    DisplayLookup(field="name"),
+                    DisplayLookup(field="description"),
+                    DisplayLookup(field="created_at"),
+                    DisplayLookup(field="updated_at"),
+                    DisplayLookup(field="public"),
+                ]),
+                c.Div(components=[
+                    c.Button(
+                        text="Edit", on_click=PageEvent(name="edit-modal")
+                    ),
+                    c.Button(
+                        text="Upload manifest", on_click=PageEvent(name="manifest-modal")
+                    ),
+                ]),
+                c.Modal(
+                    title="Edit profile",
+                    body=[
+                        c.Form(
+                            form_fields=[
+                                c.FormFieldInput(
+                                    name="name",
+                                    title="Name",
+                                    required=True,
+                                    initial=profile.name,
+                                ),
+                                f.FormFieldTextarea(
+                                    name="description",
+                                    title="Description",
+                                    required=True,
+                                    initial=profile.description,
+                                ),
+                                f.FormFieldBoolean(
+                                    name="public",
+                                    title="Public",
+                                    required=False,
+                                    initial=profile.public,
+                                ),
+                            ],
+                            loading=[c.Spinner(text="Editing...")],
+                            submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}",
+                            submit_trigger=PageEvent(name="edit-form-submit"),
+                            footer=[],
+                        ),
+                    ],
+                    footer=[
+                        c.Button(
+                            text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
+                        ),
+                        c.Button(
+                            text="Submit", on_click=PageEvent(name="edit-form-submit")
+                        ),
+                    ],
+                    open_trigger=PageEvent(name="edit-modal"),
+                ),
+
+                c.Modal(
+                    title="Upload manifest",
+                    body=[
+                        c.Text(text="This will also make all file changes available"),
+                        c.Form(
+                            form_fields=[
+                                c.FormFieldFile(
+                                    name="manifest",
+                                    title="Manifest",
+                                    accept=".json",
+                                    multiple=False,
+                                    required=True,
+                                ),
+                            ],
+                            loading=[c.Spinner(text="Uploading...")],
+                            submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}/manifest",
+                            submit_trigger=PageEvent(name="manifest-form-submit"),
+                            footer=[],
+                        ),
+                    ],
+                    footer=[
+                        c.Button(
+                            text="Cancel", named_style="secondary", on_click=PageEvent(name="manifest-form", clear=True)
+                        ),
+                        c.Button(
+                            text="Submit", on_click=PageEvent(name="manifest-form-submit")
+                        ),
+                    ],
+                    open_trigger=PageEvent(name="manifest-modal"),
                 ),
             ]
         ),

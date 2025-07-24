@@ -31,6 +31,7 @@ class ProfileFile(Model):
     name: str = fields.TextField()
     sha1: str = fields.CharField(max_length=64)
     file_id: str = fields.CharField(max_length=64, default=lambda: uuid4().hex)
+    # TODO: deleted
 
     def to_json(self) -> dict:
         return {

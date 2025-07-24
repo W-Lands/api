@@ -7,9 +7,8 @@ from uuid import uuid4, UUID
 
 from Crypto.Hash import SHA1
 from Crypto.Signature import PKCS1_v1_5
-from tortoise import fields
+from tortoise import fields, Model
 
-from ._utils import Model
 from ..config import S3, YGGDRASIL_PRIVATE_KEY
 
 
