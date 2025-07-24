@@ -72,7 +72,7 @@ def make_page(title: str, *components: AnyComponent) -> list[AnyComponent]:
         c.PageTitle(text=f"W-Lands - {title}"),
         c.Navbar(
             title="W-Lands",
-            title_event=GoToEvent(url=PREFIX),
+            title_event=GoToEvent(url=f"{PREFIX}/users"),
             start_links=[
                 c.Link(
                     components=[c.Text(text="Users")],
@@ -114,7 +114,7 @@ async def users_table(page: int = 1) -> list[AnyComponent]:
     return make_page(
         "Users",
 
-        c.Button(text="Create user", on_click=PageEvent(name="create-modal")),
+        c.Button(text="Create user", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
         c.Table(
             data=users,
             data_model=UserPydantic,
@@ -155,7 +155,7 @@ async def users_table(page: int = 1) -> list[AnyComponent]:
                     text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
                 ),
                 c.Button(
-                    text="Create", on_click=PageEvent(name="create-form-submit")
+                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
                 ),
             ],
             open_trigger=PageEvent(name="create-modal"),
@@ -241,7 +241,7 @@ async def user_info(user_id: UUID) -> list[AnyComponent]:
                 text=ban_unban, named_style="warning", on_click=PageEvent(name="ban-modal")
             ),
             c.Button(
-                text="Edit", on_click=PageEvent(name="edit-modal")
+                text="Edit", on_click=PageEvent(name="edit-modal"), class_name="+ ms-2",
             ),
         ]),
         c.Modal(
@@ -267,7 +267,7 @@ async def user_info(user_id: UUID) -> list[AnyComponent]:
                     text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
                 ),
                 c.Button(
-                    text="Submit", on_click=PageEvent(name="edit-form-submit")
+                    text="Submit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
                 ),
             ],
             open_trigger=PageEvent(name="edit-modal"),
@@ -289,7 +289,7 @@ async def user_info(user_id: UUID) -> list[AnyComponent]:
                     text="Cancel", named_style="secondary", on_click=PageEvent(name="ban-form", clear=True)
                 ),
                 c.Button(
-                    text=ban_unban, on_click=PageEvent(name="ban-form-submit")
+                    text=ban_unban, on_click=PageEvent(name="ban-form-submit"), class_name="+ ms-2",
                 ),
             ],
             open_trigger=PageEvent(name="ban-modal"),
@@ -310,7 +310,7 @@ async def profiles_table(page: int = 1) -> list[AnyComponent]:
     return make_page(
         "Profiles",
 
-        c.Button(text="Create profile", on_click=PageEvent(name="create-modal")),
+        c.Button(text="Create profile", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
         c.Table(
             data=profiles,
             data_model=ProfilePydantic,
@@ -325,7 +325,7 @@ async def profiles_table(page: int = 1) -> list[AnyComponent]:
         c.Pagination(page=page, page_size=PAGE_SIZE, total=await GameProfile.filter().count()),
 
         c.Modal(
-            title="Create user",
+            title="Create profile",
             body=[
                 c.Form(
                     form_fields=[
@@ -363,7 +363,7 @@ async def profiles_table(page: int = 1) -> list[AnyComponent]:
                     text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
                 ),
                 c.Button(
-                    text="Create", on_click=PageEvent(name="create-form-submit")
+                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
                 ),
             ],
             open_trigger=PageEvent(name="create-modal"),
@@ -373,7 +373,7 @@ async def profiles_table(page: int = 1) -> list[AnyComponent]:
 
 @app_post_fastui("/api/admin/profiles/")
 @app_post_fastui("/api/admin/profiles")
-async def create_user(
+async def create_profiile(
         admin: User = Depends(admin_auth),
         name: str = Form(), description: str = Form(), public: bool = Form(default=False),
         manifest: UploadFile = FormFile(accept="application/json,.json", max_size=256 * 1024),
@@ -448,7 +448,7 @@ async def profile_info(profile_id: int) -> list[AnyComponent]:
                 text="Edit", on_click=PageEvent(name="edit-modal")
             ),
             c.Button(
-                text="Upload manifest", on_click=PageEvent(name="manifest-modal")
+                text="Upload manifest", on_click=PageEvent(name="manifest-modal"), class_name="+ ms-2",
             ),
         ]),
         c.Modal(
@@ -486,7 +486,7 @@ async def profile_info(profile_id: int) -> list[AnyComponent]:
                     text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
                 ),
                 c.Button(
-                    text="Submit", on_click=PageEvent(name="edit-form-submit")
+                    text="Submit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
                 ),
             ],
             open_trigger=PageEvent(name="edit-modal"),
@@ -517,7 +517,7 @@ async def profile_info(profile_id: int) -> list[AnyComponent]:
                     text="Cancel", named_style="secondary", on_click=PageEvent(name="manifest-form", clear=True)
                 ),
                 c.Button(
-                    text="Submit", on_click=PageEvent(name="manifest-form-submit")
+                    text="Submit", on_click=PageEvent(name="manifest-form-submit"), class_name="+ ms-2",
                 ),
             ],
             open_trigger=PageEvent(name="manifest-modal"),
