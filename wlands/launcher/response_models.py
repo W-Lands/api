@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel
 
 from wlands.launcher.manifest_models import VersionManifest
@@ -15,7 +16,7 @@ class SessionExpirationResponse(BaseModel):
 
 
 class UserInfoResponse(BaseModel):
-    id: int
+    id: UUID
     email: str
     nickname: str
     skin: str | None
@@ -31,6 +32,7 @@ class ProfileInfo(BaseModel):
     created_at: int
     updated_at: int
     version_manifest: VersionManifest | None
+    public: bool
 
 
 class ProfileFileInfo(BaseModel):

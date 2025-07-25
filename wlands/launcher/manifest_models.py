@@ -26,7 +26,7 @@ class VersionManifestArguments(BaseModel):
 
 
 class VersionManifestLibraryDownloadArtifact(BaseModel):
-    path: str
+    path: str | None = None
     sha1: str
     size: int
     url: str
@@ -40,7 +40,7 @@ class VersionManifestLibrary(BaseModel):
     name: str
     url: str | None = None
     rules: list[VersionManifestRule] | None = None
-    download: VersionManifestLibraryDownload | None = None
+    downloads: VersionManifestLibraryDownload | None = None
 
 
 class VersionManifestAssetIndex(BaseModel):
