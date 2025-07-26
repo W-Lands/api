@@ -19,8 +19,8 @@ class ProfileFileType(IntEnum):
     REGULAR_GAME = 1
     # Libraries are placed at <game_dir>/libraries
     LIBRARY = 2
-    # Assets are placed at <game_dir>/assets
-    ASSET = 3
+    # Configs are placed at <profile_dir>/configs
+    CONFIG = 3
 
 
 class ProfileFile(Model):

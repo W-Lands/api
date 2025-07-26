@@ -41,6 +41,7 @@ class VersionManifestLibrary(BaseModel):
     url: str | None = None
     rules: list[VersionManifestRule] | None = None
     downloads: VersionManifestLibraryDownload | None = None
+    downloadOnly: bool = False
 
 
 class VersionManifestAssetIndex(BaseModel):
