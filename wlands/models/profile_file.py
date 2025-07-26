@@ -7,7 +7,7 @@ from uuid import uuid4
 from tortoise import fields, Model
 
 from wlands import models
-from wlands.config import S3
+from wlands.config import S3_PUBLIC
 
 
 class ProfileFileType(IntEnum):
@@ -17,10 +17,10 @@ class ProfileFileType(IntEnum):
     REGULAR = 0
     # Regular game files are placed at <game_dir>
     REGULAR_GAME = 1
-    # Libraries are placed at <game_dir>/libraries
-    LIBRARY = 2
+    # Mods are placed at <profile_dir>/mods
+    MOD = 2
     # Configs are placed at <profile_dir>/configs
-    CONFIG = 3
+    CONFIG = 3  # TODO: remove?
 
 
 class ProfileFile(Model):
@@ -30,14 +30,30 @@ class ProfileFile(Model):
     type: ProfileFileType = fields.IntEnumField(ProfileFileType)
     name: str = fields.TextField()
     sha1: str = fields.CharField(max_length=64)
+    size: int = fields.BigIntField()
     file_id: str = fields.CharField(max_length=64, default=lambda: uuid4().hex)
-    # TODO: deleted
+    deleted: bool = fields.BooleanField(default=False)
+
+    def _dl(self) -> str:
+        return "Download"
+
+    def url(self) -> str:
+        return S3_PUBLIC.share("wlands-profiles", f"files/{self.file_id}/{self.sha1}")
+
+    def size_kb_fmt(self) -> str:
+        return f"{self.size / 1024:.2f}"
 
     def to_json(self) -> dict:
+        download_info = {
+            "sha1": self.sha1,
+            "size": self.size,
+            "url": self.url(),
+        } if not self.deleted else None
+
         return {
-            "created_at": int(self.created_at.timestamp()),
+            "updated_at": int(self.created_at.timestamp()),
             "type": self.type,
             "name": self.name,
-            "sha1": self.sha1,
-            "url": S3.share("wlands-profiles", f"files/{self.id}/{self.file_id}"),
+            "download": download_info,
+            "deleted": self.deleted,
         }

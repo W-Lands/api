@@ -44,13 +44,13 @@ register_tortoise(
 @app.on_event("startup")
 async def on_startup():
     if environ.get("SET_UPDATES_BUCKET_POLICY") == "1":
-        await S3.put_bucket_policy("wlands-updates", {
+        await S3.put_bucket_policy("wlands-profiles", {
             'Version': '2012-10-17',
             'Statement': [{
                 'Effect': 'Allow',
                 'Principal': {'AWS': ['*']},
                 'Action': ['s3:GetObject'],
-                'Resource': [f'arn:aws:s3:::wlands-updates/*']
+                'Resource': [f'arn:aws:s3:::wlands-profiles/*']
             }]
         })
 

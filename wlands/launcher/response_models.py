@@ -35,9 +35,15 @@ class ProfileInfo(BaseModel):
     public: bool
 
 
+class ProfileFileDownload(BaseModel):
+    sha1: str
+    url: str
+    size: int
+
+
 class ProfileFileInfo(BaseModel):
     name: str
     type: ProfileFileType
-    created_at: int
-    sha1: str
-    url: str
+    updated_at: int
+    download: ProfileFileDownload | None
+    deleted: bool

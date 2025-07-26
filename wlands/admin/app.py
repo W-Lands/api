@@ -1,7 +1,9 @@
+import os
 from datetime import datetime
 from functools import partial
+from hashlib import sha1
 from time import time
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from bcrypt import checkpw, hashpw, gensalt
 from fastapi import FastAPI, Depends, Request, HTTPException, Form, UploadFile
@@ -15,8 +17,10 @@ from pytz import UTC
 from starlette.responses import HTMLResponse, JSONResponse
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
+from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
-from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile
+from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, \
+    ProfileFilePydantic, ProfileFile, ProfileFileType
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -424,11 +428,129 @@ async def edit_profile_manifest(
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
 
 
+class ProfileTabLink(BaseModel):
+    type: str
+    name: str
+    db_type: ProfileFileType
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/files/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/files", dependencies=[Depends(admin_auth)])
+async def upload_profile_files(
+        profile_id: int,
+        directory: str | None = Form(default=None), file_type: ProfileFileType = Form(), dir_type: str | None = Form(),
+        files: list[UploadFile] = FormFile(max_size=128 * 1024 * 1024),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    files_to_create = []
+    files_to_update = []
+    for file in files:
+        file.file.seek(0)
+        sha = sha1()
+        sha.update(file.file.read())
+        sha = sha.hexdigest().lower()
+
+        path = f"{directory}/{file.filename}".replace("\\", "/")
+        name = os.path.relpath(os.path.normpath(os.path.join("/", path)), "/")
+
+        existing = await ProfileFile.get_or_none(profile=profile, type=file_type, name=name)
+        if existing is not None and existing.sha1 == sha and existing.size == file.size:
+            continue
+
+        file.file.seek(0)
+        file_id = uuid4().hex
+        await S3.upload_object("wlands-profiles", f"files/{file_id}/{sha}", file.file)
+
+        if existing is not None:
+            existing.sha1 = sha
+            existing.size = file.size
+            existing.deleted = True
+            files_to_update.append(existing)
+        else:
+            files_to_create.append(ProfileFile(
+                profile=profile,
+                type=file_type,
+                name=name,
+                sha1=sha,
+                size=file.size,
+                file_id=file_id,
+            ))
+
+    await ProfileFile.bulk_create(files_to_create)
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}"))]
+
+
+profile_dirs: dict[str, ProfileTabLink] = {
+    "game_dir": ProfileTabLink(type="game_dir", name="<Game Directory>", db_type=ProfileFileType.REGULAR_GAME),
+    "profile_dir": ProfileTabLink(type="profile_dir", name="<Profile Directory>", db_type=ProfileFileType.REGULAR),
+    "configs": ProfileTabLink(type="configs", name="configs", db_type=ProfileFileType.CONFIG),
+    "mods": ProfileTabLink(type="mods", name="mods", db_type=ProfileFileType.MOD),
+}
+
+
 @app_get_fastui("/api/admin/profiles/{profile_id}/", dependencies=[Depends(admin_auth)])
 @app_get_fastui("/api/admin/profiles/{profile_id}", dependencies=[Depends(admin_auth)])
-async def profile_info(profile_id: int) -> list[AnyComponent]:
+async def profile_info(profile_id: int, dir_type: str | None = None) -> list[AnyComponent]:
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="User not found")
+
+    file_type: ProfileFileType | None = None
+
+    if dir_type in profile_dirs:
+        prof_dir = profile_dirs[dir_type]
+        file_type = prof_dir.db_type
+
+        files = await ProfileFile.filter(profile=profile, type=file_type, deleted=False).order_by("name")
+
+        files_table = [
+            c.Heading(text=prof_dir.name, level=3, class_name="+ mt-3"),
+            c.Div(
+                class_name="+ vstack",
+                components=[
+                    c.Link(
+                        components=[c.Text(text=".. Back")],
+                        on_click=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}"),
+                    ),
+                    c.Link(
+                        components=[c.Text(text="Upload file")],
+                        on_click=PageEvent(name="file-upload-modal"),
+                    ),
+                ],
+            ),
+            c.Table(
+                data=[
+                    await ProfileFilePydantic.from_tortoise_orm(file)
+                    for file in files
+                ],
+                data_model=ProfileFilePydantic,
+                columns=[
+                    DisplayLookup(field="name"),
+                    DisplayLookup(field="created_at"),
+                    DisplayLookup(field="sha1"),
+                    DisplayLookup(field="size_kb_fmt", title="Size (KB)"),
+                    DisplayLookup(field="_dl", title="Download", on_click=GoToEvent(url="{url}")),
+                    # TODO: rename, delete
+                ],
+                class_name="+ mt-2",
+            )
+        ]
+    else:
+        files_table = [
+            c.Table(
+                data=list(profile_dirs.values()),
+                columns=[
+                    DisplayLookup(
+                        title="Directory",
+                        field="name",
+                        on_click=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}/?dir_type={{type}}")
+                    ),
+                ],
+                class_name="+ mt-2",
+            )
+        ]
 
     profile = await ProfilePydantic.from_tortoise_orm(profile)
     return make_page(
@@ -451,6 +573,9 @@ async def profile_info(profile_id: int) -> list[AnyComponent]:
                 text="Upload manifest", on_click=PageEvent(name="manifest-modal"), class_name="+ ms-2",
             ),
         ]),
+
+        *files_table,
+
         c.Modal(
             title="Edit profile",
             body=[
@@ -483,7 +608,7 @@ async def profile_info(profile_id: int) -> list[AnyComponent]:
             ],
             footer=[
                 c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-modal", clear=True)
                 ),
                 c.Button(
                     text="Submit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
@@ -514,13 +639,63 @@ async def profile_info(profile_id: int) -> list[AnyComponent]:
             ],
             footer=[
                 c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="manifest-form", clear=True)
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="manifest-modal", clear=True)
                 ),
                 c.Button(
                     text="Submit", on_click=PageEvent(name="manifest-form-submit"), class_name="+ ms-2",
                 ),
             ],
             open_trigger=PageEvent(name="manifest-modal"),
+        ),
+
+        c.Modal(
+            title="Upload file",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="directory",
+                            title="Parent directory",
+                            required=False,
+                        ),
+                        c.FormFieldFile(
+                            name="files",
+                            title="File(s)",
+                            multiple=True,
+                            required=True,
+                        ),
+                        c.FormFieldInput(
+                            title="",
+                            name="file_type",
+                            html_type="hidden",
+                            required=True,
+                            initial=file_type.value if file_type is not None else -1,
+                            class_name="d-none",
+                        ),
+                        c.FormFieldInput(
+                            title="",
+                            name="dir_type",
+                            html_type="hidden",
+                            required=False,
+                            initial=dir_type,
+                            class_name="d-none",
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Uploading...")],
+                    submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}/files",
+                    submit_trigger=PageEvent(name="file-upload-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="file-upload-modal", clear=True)
+                ),
+                c.Button(
+                    text="Upload", on_click=PageEvent(name="file-upload-form-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="file-upload-modal"),
         ),
     )
 
