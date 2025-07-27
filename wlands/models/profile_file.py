@@ -14,13 +14,9 @@ class ProfileFileType(IntEnum):
     # <profile_dir> is <game_dir>/profiles/<profile_name>
 
     # Regular files are placed at <profile_dir>
-    REGULAR = 0
+    PROFILE = 0
     # Regular game files are placed at <game_dir>
-    REGULAR_GAME = 1
-    # Mods are placed at <profile_dir>/mods
-    MOD = 2
-    # Configs are placed at <profile_dir>/configs
-    CONFIG = 3  # TODO: remove?
+    GAME = 1
 
 
 class ProfileFile(Model):
@@ -37,19 +33,17 @@ class ProfileFile(Model):
     def _dl(self) -> str:
         return "Download"
 
+    @property
     def url(self) -> str:
         return S3_PUBLIC.share(
             "wlands-profiles", f"files/{self.file_id}/{self.sha1}", download_filename=self.name.rpartition("/")[2],
         )
 
-    def size_kb_fmt(self) -> str:
-        return f"{self.size / 1024:.2f}"
-
     def to_json(self) -> dict:
         download_info = {
             "sha1": self.sha1,
             "size": self.size,
-            "url": self.url(),
+            "url": self.url,
         } if not self.deleted else None
 
         return {

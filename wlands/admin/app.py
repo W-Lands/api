@@ -3,13 +3,14 @@ from datetime import datetime
 from functools import partial
 from hashlib import sha1
 from time import time
+from typing import Self
 from uuid import UUID, uuid4
 
 from bcrypt import checkpw, hashpw, gensalt
 from fastapi import FastAPI, Depends, Request, HTTPException, Form, UploadFile
 from fastui import prebuilt_html, FastUI, AnyComponent, components as c
-from fastui.components.display import DisplayLookup
 from fastui.components import forms as f
+from fastui.components.display import DisplayLookup
 from fastui.events import GoToEvent, AuthEvent, PageEvent
 from fastui.forms import fastui_form, FormFile
 from pydantic import BaseModel, EmailStr, Field, SecretStr
@@ -19,8 +20,8 @@ from starlette.responses import HTMLResponse, JSONResponse
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
 from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
-from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, \
-    ProfileFilePydantic, ProfileFile, ProfileFileType
+from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
+    ProfileFileType
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -439,6 +440,7 @@ class ProfileTabLink(BaseModel):
 async def upload_profile_files(
         profile_id: int,
         directory: str | None = Form(default=None), file_type: ProfileFileType = Form(), dir_type: str | None = Form(),
+        dir_prefix: str = Form(default=""),
         files: list[UploadFile] = FormFile(max_size=128 * 1024 * 1024),
 ):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
@@ -452,7 +454,7 @@ async def upload_profile_files(
         sha.update(file.file.read())
         sha = sha.hexdigest().lower()
 
-        path = f"{directory}/{file.filename}".replace("\\", "/")
+        path = f"{dir_prefix}/{directory}/{file.filename}".replace("\\", "/")
         name = os.path.relpath(os.path.normpath(os.path.join("/", path)), "/")
 
         existing = await ProfileFile.get_or_none(profile=profile, type=file_type, name=name)
@@ -480,30 +482,112 @@ async def upload_profile_files(
 
     await ProfileFile.bulk_create(files_to_create)
 
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}"))]
+    return [
+        c.FireEvent(
+            event=GoToEvent(
+                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
+            )
+        )
+    ]
+
+
+class ProfileFileV(BaseModel):
+    id: int
+    created_at_fmt: str
+    name: str
+    file_id: str
+    sha1: str
+    size: int
+
+    url: str
+    size_fmt: str
+
+    action_rename: str = "Rename"
+    action_delete: str = "Delete"
+
+    @classmethod
+    def from_db(
+            cls, file: ProfileFile | None, name: str,
+            profile_id: int | None = None, dir_type: str | None = None, dir_prefix: str | None = None,
+    ) -> Self:
+        if file is None:
+            return cls(
+                id=-1,
+                created_at_fmt="",
+                name=name,
+                file_id="",
+                sha1="",
+                size=-1,
+                url=f"{PREFIX}/profiles/{profile_id}/?dir_type={dir_type}&dir_prefix={dir_prefix}/{name}",
+                size_fmt="",
+            )
+
+        size_fmt = f"{file.size} B"
+        if file.size > 1024 * 1024 * 1024:
+            size_fmt = f"{file.size / 1024 / 1024 / 1024:.2f} GB"
+        elif file.size > 1024 * 1024:
+            size_fmt = f"{file.size / 1024 / 1024:.2f} MB"
+        elif file.size > 1024:
+            size_fmt = f"{file.size / 1024:.2f} KB"
+
+        return cls(
+            id=file.id,
+            created_at_fmt=file.created_at.strftime("%d.%m.%Y %H:%M:%S"),
+            name=name,
+            file_id=file.file_id,
+            sha1=file.sha1,
+            size=file.size,
+            url=file.url,
+            size_fmt=size_fmt,
+        )
 
 
 profile_dirs: dict[str, ProfileTabLink] = {
-    "game_dir": ProfileTabLink(type="game_dir", name="<Game Directory>", db_type=ProfileFileType.REGULAR_GAME),
-    "profile_dir": ProfileTabLink(type="profile_dir", name="<Profile Directory>", db_type=ProfileFileType.REGULAR),
-    "configs": ProfileTabLink(type="configs", name="configs", db_type=ProfileFileType.CONFIG),
-    "mods": ProfileTabLink(type="mods", name="mods", db_type=ProfileFileType.MOD),
+    "game_dir": ProfileTabLink(type="game_dir", name="<Game Directory>", db_type=ProfileFileType.GAME),
+    "profile_dir": ProfileTabLink(type="profile_dir", name="<Profile Directory>", db_type=ProfileFileType.PROFILE),
 }
 
 
 @app_get_fastui("/api/admin/profiles/{profile_id}/", dependencies=[Depends(admin_auth)])
 @app_get_fastui("/api/admin/profiles/{profile_id}", dependencies=[Depends(admin_auth)])
-async def profile_info(profile_id: int, dir_type: str | None = None) -> list[AnyComponent]:
+async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix: str = "") -> list[AnyComponent]:
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="User not found")
 
     file_type: ProfileFileType | None = None
 
+    dir_prefix = dir_prefix.strip()
+    dir_prefix = os.path.relpath(os.path.normpath(os.path.join("/", dir_prefix)), "/")
+    if dir_prefix == ".":
+        dir_prefix = ""
+
     if dir_type in profile_dirs:
         prof_dir = profile_dirs[dir_type]
         file_type = prof_dir.db_type
 
-        files = await ProfileFile.filter(profile=profile, type=file_type, deleted=False).order_by("name")
+        files = await ProfileFile.filter(
+            profile=profile, type=file_type, deleted=False, name__startswith=dir_prefix,
+        ).order_by("name")
+
+        vdirs = {}
+        vfiles = []
+
+        for file in files:
+            file_path = file.name[len(dir_prefix):].lstrip("/")
+
+            paths = file_path.split("/")
+            if len(paths) > 1:
+                if paths[0] not in vdirs:
+                    vdirs[paths[0]] = ProfileFileV.from_db(None, f"{paths[0]}/", profile.id, dir_type, dir_prefix)
+
+                continue
+
+            vfiles.append(ProfileFileV.from_db(file, file_path))
+
+        vfiles = [*sorted(list(vdirs.values()), key=lambda e: e.name), *sorted(vfiles, key=lambda e: e.name)]
+
+        if dir_prefix:
+            vfiles.insert(0, ProfileFileV.from_db(None, "..", profile.id, dir_type, dir_prefix))
 
         files_table = [
             c.Heading(text=prof_dir.name, level=3, class_name="+ mt-3"),
@@ -521,18 +605,16 @@ async def profile_info(profile_id: int, dir_type: str | None = None) -> list[Any
                 ],
             ),
             c.Table(
-                data=[
-                    await ProfileFilePydantic.from_tortoise_orm(file)
-                    for file in files
-                ],
-                data_model=ProfileFilePydantic,
+                data=vfiles,
+                data_model=ProfileFileV,
                 columns=[
-                    DisplayLookup(field="name"),
-                    DisplayLookup(field="created_at"),
+                    DisplayLookup(field="name", on_click=GoToEvent(url="{url}")),
+                    DisplayLookup(field="created_at_fmt", title="Created At"),
                     DisplayLookup(field="sha1"),
-                    DisplayLookup(field="size_kb_fmt", title="Size (KB)"),
-                    DisplayLookup(field="_dl", title="Download", on_click=GoToEvent(url="{url}")),
-                    # TODO: rename, delete
+                    DisplayLookup(field="size_fmt", title="Size"),
+                    # TODO: implement
+                    DisplayLookup(field="action_rename", title="Actions", on_click=GoToEvent(url="/")),
+                    DisplayLookup(field="action_delete", title="", on_click=GoToEvent(url="/")),
                 ],
                 class_name="+ mt-2",
             )
@@ -678,6 +760,14 @@ async def profile_info(profile_id: int, dir_type: str | None = None) -> list[Any
                             html_type="hidden",
                             required=False,
                             initial=dir_type,
+                            class_name="d-none",
+                        ),
+                        c.FormFieldInput(
+                            title="",
+                            name="dir_prefix",
+                            html_type="hidden",
+                            required=False,
+                            initial=dir_prefix,
                             class_name="d-none",
                         ),
                     ],

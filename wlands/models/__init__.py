@@ -15,8 +15,3 @@ ProfilePydantic = pydantic_model_creator(
     GameProfile,
     include=("id", "name", "description", "created_at", "updated_at", "public",),
 )
-ProfileFilePydantic = pydantic_model_creator(
-    ProfileFile,
-    include=("id", "created_at", "name", "file_id", "sha1", "size"),
-    computed=("url", "size_kb_fmt", "_dl"),
-)
