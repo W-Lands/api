@@ -387,7 +387,7 @@ async def profiles_table(page: int = 1) -> list[AnyComponent]:
 
 @app_post_fastui("/api/admin/profiles/")
 @app_post_fastui("/api/admin/profiles")
-async def create_profiile(
+async def create_profile(
         admin: User = Depends(admin_auth),
         name: str = Form(), description: str = Form(), public: bool = Form(default=False),
         manifest: UploadFile = FormFile(accept="application/json,.json", max_size=256 * 1024),
@@ -650,6 +650,8 @@ async def revert_profile_files(
         profile_id: int,
         dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
 ):
+    # TODO: fix reverting files deletes deleted files instead of reverting deletion
+
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="Profile not found")
 
