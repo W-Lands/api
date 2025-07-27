@@ -3,7 +3,7 @@ from datetime import datetime
 from functools import partial
 from hashlib import sha1
 from time import time
-from typing import Self
+from typing import Self, Literal
 from uuid import UUID, uuid4
 
 from bcrypt import checkpw, hashpw, gensalt
@@ -72,7 +72,15 @@ async def admin_login_post(form: LoginForm = fastui_form(LoginForm)) -> list[Any
     ]
 
 
-def make_page(title: str, *components: AnyComponent) -> list[AnyComponent]:
+class ActionMode(c.Div):
+    ...
+
+
+def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, *components: AnyComponent) -> list[AnyComponent]:
+    if not isinstance(action_mode, ActionMode):
+        if action_mode is not None:
+            components = [action_mode, *components]
+
     return [
         c.PageTitle(text=f"W-Lands - {title}"),
         c.Navbar(
@@ -99,6 +107,7 @@ def make_page(title: str, *components: AnyComponent) -> list[AnyComponent]:
         ),
         c.Page(
             components=[
+                *([action_mode] if isinstance(action_mode, ActionMode) else ()),
                 c.Heading(text=title),
                 *components,
             ],
@@ -502,14 +511,22 @@ class ProfileFileV(BaseModel):
     url: str
     size_fmt: str
 
+    action_rename_url: str
+    action_delete_url: str
+
     action_rename: str = "Rename"
     action_delete: str = "Delete"
 
     @classmethod
     def from_db(
-            cls, file: ProfileFile | None, name: str,
-            profile_id: int | None = None, dir_type: str | None = None, dir_prefix: str | None = None,
+            cls, file: ProfileFile | None, name: str, dir_type: str, dir_prefix: str,
+            profile_id: int | None = None,
     ) -> Self:
+        if file is not None and profile_id is None:
+            profile_id = file.profile_id
+        profile_prefix = f"{PREFIX}/profiles/{profile_id}/"
+        ctx_prefix = f"?dir_type={dir_type}&dir_prefix={dir_prefix}"
+
         if file is None:
             return cls(
                 id=-1,
@@ -518,8 +535,10 @@ class ProfileFileV(BaseModel):
                 file_id="",
                 sha1="",
                 size=-1,
-                url=f"{PREFIX}/profiles/{profile_id}/?dir_type={dir_type}&dir_prefix={dir_prefix}/{name}",
+                url=f"{profile_prefix}?dir_type={dir_type}&dir_prefix={dir_prefix}/{name}",
                 size_fmt="",
+                action_rename_url=f"{profile_prefix}{ctx_prefix}&mode=rename&target_type=dir&target={name}",
+                action_delete_url=f"{profile_prefix}{ctx_prefix}&mode=delete&target_type=dir&target={name}",
             )
 
         size_fmt = f"{file.size} B"
@@ -539,6 +558,8 @@ class ProfileFileV(BaseModel):
             size=file.size,
             url=file.url,
             size_fmt=size_fmt,
+            action_rename_url=f"{profile_prefix}{ctx_prefix}&mode=rename&target_type=file&target={file.id}",
+            action_delete_url=f"{profile_prefix}{ctx_prefix}&mode=delete&target_type=file&target={file.id}",
         )
 
 
@@ -550,9 +571,16 @@ profile_dirs: dict[str, ProfileTabLink] = {
 
 @app_get_fastui("/api/admin/profiles/{profile_id}/", dependencies=[Depends(admin_auth)])
 @app_get_fastui("/api/admin/profiles/{profile_id}", dependencies=[Depends(admin_auth)])
-async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix: str = "") -> list[AnyComponent]:
+async def profile_info(
+        profile_id: int, dir_type: str | None = None, dir_prefix: str = "",
+        mode: Literal["rename", "delete"] | None = None, target_type: Literal["file", "dir"] | None = None,
+        target: str | None = None,
+) -> list[AnyComponent]:
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="User not found")
+
+    profile_prefix = f"{PREFIX}/profiles/{profile.id}/"
+    profile_prefix_api = f"{PREFIX_API}/admin/profiles/{profile.id}"
 
     file_type: ProfileFileType | None = None
 
@@ -560,6 +588,8 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
     dir_prefix = os.path.relpath(os.path.normpath(os.path.join("/", dir_prefix)), "/")
     if dir_prefix == ".":
         dir_prefix = ""
+
+    target_obj = None
 
     if dir_type in profile_dirs:
         prof_dir = profile_dirs[dir_type]
@@ -578,16 +608,21 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
             paths = file_path.split("/")
             if len(paths) > 1:
                 if paths[0] not in vdirs:
-                    vdirs[paths[0]] = ProfileFileV.from_db(None, f"{paths[0]}/", profile.id, dir_type, dir_prefix)
+                    name = f"{paths[0]}/"
+                    vdirs[paths[0]] = ProfileFileV.from_db(None, name, dir_type, dir_prefix, profile.id)
+                    if target_type == "dir" and target == name:
+                        target_obj = vdirs[paths[0]]
 
                 continue
 
-            vfiles.append(ProfileFileV.from_db(file, file_path))
+            vfiles.append(ProfileFileV.from_db(file, file_path, dir_type, dir_prefix))
+            if target_type == "file" and target == str(file.id):
+                target_obj = vfiles[-1]
 
         vfiles = [*sorted(list(vdirs.values()), key=lambda e: e.name), *sorted(vfiles, key=lambda e: e.name)]
 
         if dir_prefix:
-            vfiles.insert(0, ProfileFileV.from_db(None, "..", profile.id, dir_type, dir_prefix))
+            vfiles.insert(0, ProfileFileV.from_db(None, "..", dir_type, dir_prefix, profile.id))
 
         files_table = [
             c.Heading(text=prof_dir.name, level=3, class_name="+ mt-3"),
@@ -596,7 +631,7 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
                 components=[
                     c.Link(
                         components=[c.Text(text=".. Back")],
-                        on_click=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}"),
+                        on_click=GoToEvent(url=profile_prefix),
                     ),
                     c.Link(
                         components=[c.Text(text="Upload file")],
@@ -612,9 +647,8 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
                     DisplayLookup(field="created_at_fmt", title="Created At"),
                     DisplayLookup(field="sha1"),
                     DisplayLookup(field="size_fmt", title="Size"),
-                    # TODO: implement
-                    DisplayLookup(field="action_rename", title="Actions", on_click=GoToEvent(url="/")),
-                    DisplayLookup(field="action_delete", title="", on_click=GoToEvent(url="/")),
+                    DisplayLookup(field="action_rename", title="Actions", on_click=GoToEvent(url="{action_rename_url}")),
+                    DisplayLookup(field="action_delete", title="", on_click=GoToEvent(url="{action_delete_url}")),
                 ],
                 class_name="+ mt-2",
             )
@@ -627,34 +661,115 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
                     DisplayLookup(
                         title="Directory",
                         field="name",
-                        on_click=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}/?dir_type={{type}}")
+                        on_click=GoToEvent(url=f"{profile_prefix}?dir_type={{type}}")
                     ),
                 ],
                 class_name="+ mt-2",
             )
         ]
 
+    action_mode = None
+    if mode is not None and target_obj is not None:
+        action_form = []
+        action_title = ""
+        btn_text = ""
+        btn_class = ""
+
+        if mode == "rename":
+            action_title = f"Renaming {target_obj.name}"
+            btn_text = "Rename"
+            btn_class = "btn-warning"
+
+            action_form = [
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="name",
+                            title="Name",
+                            required=True,
+                            initial=target_obj.name,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Editing...")],
+                    submit_url="",  # TODO
+                    submit_trigger=PageEvent(name="action-form-submit"),
+                    footer=[],
+                )
+            ]
+        elif mode == "delete":
+            action_title = f"Deleting {target_obj.name}"
+            btn_text = "Delete"
+            btn_class = "btn-danger"
+
+            action_form = [
+                c.Heading(
+                    text="Are you sure you want to delete this file/directory?",
+                    level=5,
+                    class_name="text-danger",
+                ),
+                c.Form(
+                    form_fields=[
+                    ],
+                    loading=[c.Spinner(text="Editing...")],
+                    submit_url="",  # TODO
+                    submit_trigger=PageEvent(name="action-form-submit"),
+                    footer=[],
+                )
+            ]
+
+        action_mode = ActionMode(
+            class_name="border-bottom mb-4 pb-3",
+            components=[
+                c.Heading(
+                    text=action_title,
+                    level=4,
+                ),
+                *action_form,
+                c.Div(
+                    class_name="modal-footer",
+                    components=[
+                        c.Button(
+                            text="Cancel",
+                            named_style="secondary",
+                            on_click=GoToEvent(url=f"{profile_prefix}?dir_type={dir_type}&dir_prefix={dir_prefix}")
+                        ),
+                        c.Button(
+                            text=btn_text,
+                            on_click=PageEvent(name="action-form-submit"),
+                            class_name=f"+ ms-2 {btn_class}",
+                        )
+                    ]
+                ),
+            ]
+        )
+
     profile = await ProfilePydantic.from_tortoise_orm(profile)
     return make_page(
         profile.name,
+        action_mode,
 
         c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/profiles")),
-        c.Details(data=profile, fields=[
-            DisplayLookup(field="id"),
-            DisplayLookup(field="name"),
-            DisplayLookup(field="description"),
-            DisplayLookup(field="created_at"),
-            DisplayLookup(field="updated_at"),
-            DisplayLookup(field="public"),
-        ]),
-        c.Div(components=[
-            c.Button(
-                text="Edit", on_click=PageEvent(name="edit-modal")
-            ),
-            c.Button(
-                text="Upload manifest", on_click=PageEvent(name="manifest-modal"), class_name="+ ms-2",
-            ),
-        ]),
+        c.Details(
+            data=profile,
+            fields=[
+                DisplayLookup(field="id"),
+                DisplayLookup(field="name"),
+                DisplayLookup(field="description"),
+                DisplayLookup(field="created_at"),
+                DisplayLookup(field="updated_at"),
+                DisplayLookup(field="public"),
+            ]
+        ),
+        c.Div(
+            class_name="pb-4 border-bottom",
+            components=[
+                c.Button(
+                    text="Edit", on_click=PageEvent(name="edit-modal")
+                ),
+                c.Button(
+                    text="Upload manifest", on_click=PageEvent(name="manifest-modal"), class_name="+ ms-2",
+                ),
+            ]),
 
         *files_table,
 
@@ -683,7 +798,7 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
                         ),
                     ],
                     loading=[c.Spinner(text="Editing...")],
-                    submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}",
+                    submit_url=profile_prefix_api,
                     submit_trigger=PageEvent(name="edit-form-submit"),
                     footer=[],
                 ),
@@ -714,7 +829,7 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
                         ),
                     ],
                     loading=[c.Spinner(text="Uploading...")],
-                    submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}/manifest",
+                    submit_url=f"{profile_prefix_api}/manifest",
                     submit_trigger=PageEvent(name="manifest-form-submit"),
                     footer=[],
                 ),
@@ -772,7 +887,7 @@ async def profile_info(profile_id: int, dir_type: str | None = None, dir_prefix:
                         ),
                     ],
                     loading=[c.Spinner(text="Uploading...")],
-                    submit_url=f"{PREFIX_API}/admin/profiles/{profile.id}/files",
+                    submit_url=f"{profile_prefix_api}/files",
                     submit_trigger=PageEvent(name="file-upload-form-submit"),
                     footer=[],
                 ),

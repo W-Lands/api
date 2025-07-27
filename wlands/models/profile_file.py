@@ -30,8 +30,7 @@ class ProfileFile(Model):
     file_id: str = fields.CharField(max_length=64, default=lambda: uuid4().hex)
     deleted: bool = fields.BooleanField(default=False)
 
-    def _dl(self) -> str:
-        return "Download"
+    profile_id: int
 
     @property
     def url(self) -> str:
