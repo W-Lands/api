@@ -329,8 +329,8 @@ async def profiles_table(page: int = 1) -> list[AnyComponent]:
             data=profiles,
             data_model=ProfilePydantic,
             columns=[
-                DisplayLookup(field="id", on_click=GoToEvent(url=f"{PREFIX}/profiles/{{id}}/")),
-                DisplayLookup(field="name"),
+                DisplayLookup(field="id"),
+                DisplayLookup(field="name", on_click=GoToEvent(url=f"{PREFIX}/profiles/{{id}}/")),
                 DisplayLookup(field="created_at"),
                 DisplayLookup(field="updated_at"),
                 DisplayLookup(field="public"),
@@ -694,7 +694,7 @@ class ProfileFileV(BaseModel):
     @classmethod
     def from_db(
             cls, file: ProfileFile | None, name: str, dir_type: str, dir_prefix: str,
-            profile_id: int | None = None, size: int | None = None,
+            profile_id: int | None = None,
     ) -> Self:
         if file is not None and profile_id is None:
             profile_id = file.profile_id
@@ -723,6 +723,7 @@ class ProfileFileV(BaseModel):
                 action_delete_url=action_delete_url,
             )
 
+        action_prefix = f"{profile_prefix}{ctx_prefix}&target_type=file&target={file.id}"
         return cls(
             id=file.id,
             created_at_fmt=file.created_at.strftime("%d.%m.%Y %H:%M:%S"),
@@ -732,8 +733,8 @@ class ProfileFileV(BaseModel):
             size=file.size,
             url=file.url,
             size_fmt=cls.format_size(file.size),
-            action_rename_url=f"{profile_prefix}{ctx_prefix}&mode=rename&target_type=file&target={file.id}",
-            action_delete_url=f"{profile_prefix}{ctx_prefix}&mode=delete&target_type=file&target={file.id}",
+            action_rename_url=f"{action_prefix}&mode=rename",
+            action_delete_url=f"{action_prefix}&mode=delete",
         )
 
 
