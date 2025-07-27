@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from hashlib import sha1
 from time import time
@@ -595,6 +595,75 @@ async def delete_profile_files(
     ]
 
 
+@app_get_fastui("/api/admin/profiles/{profile_id}/unapplied-files/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/profiles/{profile_id}/unapplied-files", dependencies=[Depends(admin_auth)])
+async def unapplied_files_list(profile_id: int):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    dir_name = {
+        ProfileFileType.GAME: "<game>",
+        ProfileFileType.PROFILE: "<profile>",
+    }
+
+    result = ""
+    files = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at)\
+        .order_by("deleted", "created_at")
+
+    for file in files:
+        text = f" - **{dir_name.get(file.type, 'Unknown')}**/`{file.name}`"
+        if file.deleted:
+            text += " - deleted (or renamed)"
+        result += f"{text}\n"
+
+    return [
+        c.Markdown(text=result)
+    ]
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/apply-files/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/apply-files", dependencies=[Depends(admin_auth)])
+async def apply_profile_files(
+        profile_id: int,
+        dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    file = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).order_by("-created_at").first()
+    if file is not None:
+        profile.updated_at = datetime.now(timezone.utc)
+        await profile.save(update_fields=["updated_at"])
+
+    return [
+        c.FireEvent(
+            event=GoToEvent(
+                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
+            )
+        )
+    ]
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/revert-files/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/revert-files", dependencies=[Depends(admin_auth)])
+async def revert_profile_files(
+        profile_id: int,
+        dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).delete()
+
+    return [
+        c.FireEvent(
+            event=GoToEvent(
+                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
+            )
+        )
+    ]
+
+
 class ProfileFileV(BaseModel):
     id: int
     created_at_fmt: str
@@ -788,6 +857,8 @@ async def profile_info(
             )
         ]
 
+    unapplied_changes = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).count()
+
     action_mode = None
     if mode is not None and target_obj is not None:
         action_form = []
@@ -890,6 +961,74 @@ async def profile_info(
                             text=btn_text,
                             on_click=PageEvent(name="action-form-submit"),
                             class_name=f"+ ms-2 {btn_class}",
+                        )
+                    ]
+                ),
+            ]
+        )
+    elif unapplied_changes:
+        hidden_fields = [
+            HiddenInput(
+                name="dir_type",
+                required=False,
+                value=dir_type,
+            ),
+            HiddenInput(
+                name="dir_prefix",
+                required=False,
+                value=dir_prefix,
+            ),
+        ]
+
+        action_mode = ActionMode(
+            class_name="border-bottom mb-4 pb-3",
+            components=[
+                c.Heading(
+                    text=f"This profile has approximately {unapplied_changes} unapplied files (private changes)",
+                    level=4,
+                ),
+                c.ServerLoad(
+                    path=f"/admin/profiles/{profile.id}/unapplied-files",
+                    load_trigger=PageEvent(name="load-unapplied-files"),
+                    components=[
+                        c.Link(
+                            on_click=PageEvent(name="load-unapplied-files"),
+                            components=[
+                                c.Text(text="Show changes")
+                            ],
+                        )
+                    ]
+                ),
+                c.Heading(
+                    text="Do you want to apply them now?",
+                    level=5,
+                ),
+                c.Form(
+                    form_fields=hidden_fields,
+                    loading=[c.Spinner(text="Applying...")],
+                    submit_url=f"{profile_prefix_api}/apply-files",
+                    submit_trigger=PageEvent(name="apply-form-submit"),
+                    footer=[],
+                ),
+                c.Form(
+                    form_fields=hidden_fields,
+                    loading=[c.Spinner(text="Reverting...")],
+                    submit_url=f"{profile_prefix_api}/revert-files",
+                    submit_trigger=PageEvent(name="revert-form-submit"),
+                    footer=[],
+                ),
+                c.Div(
+                    class_name="modal-footer",
+                    components=[
+                        c.Button(
+                            text="Apply",
+                            on_click=PageEvent(name="apply-form-submit"),
+                            class_name=f"+ btn-warning",
+                        ),
+                        c.Button(
+                            text="Revert",
+                            on_click=PageEvent(name="revert-form-submit"),
+                            class_name=f"+ ms-2 btn-danger",
                         )
                     ]
                 ),
