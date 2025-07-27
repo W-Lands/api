@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 
 class VersionManifestRuleOs(BaseModel):
@@ -67,6 +68,9 @@ class VersionManifestJavaVersion(BaseModel):
     majorVersion: int
 
 
+T = TypeVar("T")
+
+
 class VersionManifest(BaseModel):
     id: str
     inheritsFrom: str | None = None
@@ -74,10 +78,17 @@ class VersionManifest(BaseModel):
     releaseTime: datetime
     type: str
     mainClass: str
-    minimumLauncherVersion: int  # TODO: remove, probably unused
     arguments: VersionManifestArguments
-    assets: str
     libraries: list[VersionManifestLibrary]
-    assetIndex: VersionManifestAssetIndex
-    downloads: VersionManifestDownloads
-    javaVersion: VersionManifestJavaVersion
+
+    assets: str | None = None
+    assetIndex: VersionManifestAssetIndex | None = None
+    downloads: VersionManifestDownloads | None = None
+    javaVersion: VersionManifestJavaVersion | None = None
+
+    @field_validator("assets", mode="after")
+    @classmethod
+    def validate_allow_missing_if_inherits(cls, value: T | None, info: ValidationInfo) -> T | None:
+        if info.data["inheritsFrom"] is None and value is None:
+            raise ValueError(f"Field required: {info.field_name}")
+        return value
