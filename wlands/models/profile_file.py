@@ -38,7 +38,9 @@ class ProfileFile(Model):
         return "Download"
 
     def url(self) -> str:
-        return S3_PUBLIC.share("wlands-profiles", f"files/{self.file_id}/{self.sha1}")
+        return S3_PUBLIC.share(
+            "wlands-profiles", f"files/{self.file_id}/{self.sha1}", download_filename=self.name.rpartition("/")[2],
+        )
 
     def size_kb_fmt(self) -> str:
         return f"{self.size / 1024:.2f}"

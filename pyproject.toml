@@ -15,7 +15,7 @@ pycryptodome = "^3.23.0"
 bcrypt = "^4.3.0"
 python-magic = "^0.4.27"
 pillow = "^11.3.0"
-s3lite = "^0.1.9"
+s3lite = "^0.1.11"
 pydantic = {extras = ["email"], version = "2.9.2"}
 aerich = "^0.9.1"
 python-multipart = "^0.0.20"
