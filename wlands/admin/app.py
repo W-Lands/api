@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 from hashlib import sha1
 from time import time
@@ -500,6 +500,101 @@ async def upload_profile_files(
     ]
 
 
+@app_post_fastui("/api/admin/profiles/{profile_id}/files/rename/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/files/rename", dependencies=[Depends(admin_auth)])
+async def rename_profile_files(
+        profile_id: int, name: str = Form(),
+        file_type: ProfileFileType = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
+        dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    new_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{name}")), "/")
+    search_name = ".."
+
+    files_to_create = []
+    files_to_update = []
+    if target_type == "file":
+        file = await ProfileFile.get_or_none(profile=profile, type=file_type, deleted=False, id=int(target))
+        search_name = file.name
+        if file is not None:
+            files_to_update.append(file)
+    elif target_type == "dir":
+        name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
+        search_name = name
+        files_to_update = await ProfileFile.filter(
+            profile=profile, type=file_type, deleted=False, name__startswith=name
+        )
+
+    before = datetime.now(UTC) - timedelta(seconds=1)
+    after = datetime.now(UTC)
+    for file in files_to_update:
+        files_to_create.append(ProfileFile(
+            profile=profile,
+            created_at=before,
+            type=file_type,
+            name=file.name,
+            sha1="",
+            size=0,
+            file_id="-",
+            deleted=True,
+        ))
+
+        file.name = new_name + file.name[len(search_name):]
+        file.created_at = after
+
+    if files_to_update:
+        await ProfileFile.bulk_update(files_to_update, fields=["name", "created_at"])
+        await ProfileFile.bulk_create(files_to_create)
+
+    return [
+        c.FireEvent(
+            event=GoToEvent(
+                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
+            )
+        )
+    ]
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/files/delete/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/files/delete", dependencies=[Depends(admin_auth)])
+async def delete_profile_files(
+        profile_id: int,
+        file_type: ProfileFileType = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
+        dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    files_to_update = []
+    if target_type == "file":
+        file = await ProfileFile.get_or_none(profile=profile, type=file_type, deleted=False, id=int(target))
+        if file is not None:
+            files_to_update.append(file)
+    elif target_type == "dir":
+        name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
+        files_to_update = await ProfileFile.filter(
+            profile=profile, type=file_type, deleted=False, name__startswith=name
+        )
+
+    now = datetime.now(UTC)
+    for file in files_to_update:
+        file.deleted = True
+        file.created_at = now
+
+    if files_to_update:
+        await ProfileFile.bulk_update(files_to_update, fields=["deleted", "created_at"])
+
+    return [
+        c.FireEvent(
+            event=GoToEvent(
+                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
+            )
+        )
+    ]
+
+
 class ProfileFileV(BaseModel):
     id: int
     created_at_fmt: str
@@ -517,10 +612,20 @@ class ProfileFileV(BaseModel):
     action_rename: str = "Rename"
     action_delete: str = "Delete"
 
+    @staticmethod
+    def format_size(size: int) -> str:
+        if size > 1024 * 1024 * 1024:
+            return f"{size / 1024 / 1024 / 1024:.2f} GB"
+        elif size > 1024 * 1024:
+            return f"{size / 1024 / 1024:.2f} MB"
+        elif size > 1024:
+            return f"{size / 1024:.2f} KB"
+        return f"{size} B"
+
     @classmethod
     def from_db(
             cls, file: ProfileFile | None, name: str, dir_type: str, dir_prefix: str,
-            profile_id: int | None = None,
+            profile_id: int | None = None, size: int | None = None,
     ) -> Self:
         if file is not None and profile_id is None:
             profile_id = file.profile_id
@@ -528,26 +633,26 @@ class ProfileFileV(BaseModel):
         ctx_prefix = f"?dir_type={dir_type}&dir_prefix={dir_prefix}"
 
         if file is None:
+            action_prefix = f"{profile_prefix}{ctx_prefix}&target_type=dir&target={name}"
+            action_rename = "Rename" if name != ".." else ""
+            action_delete = "Delete" if name != ".." else ""
+            action_rename_url = f"{action_prefix}&mode=rename" if name != ".." else ""
+            action_delete_url = f"{action_prefix}&mode=delete" if name != ".." else ""
+
             return cls(
                 id=-1,
                 created_at_fmt="",
                 name=name,
                 file_id="",
                 sha1="",
-                size=-1,
+                size=0,
                 url=f"{profile_prefix}?dir_type={dir_type}&dir_prefix={dir_prefix}/{name}",
                 size_fmt="",
-                action_rename_url=f"{profile_prefix}{ctx_prefix}&mode=rename&target_type=dir&target={name}",
-                action_delete_url=f"{profile_prefix}{ctx_prefix}&mode=delete&target_type=dir&target={name}",
+                action_rename=action_rename,
+                action_delete=action_delete,
+                action_rename_url=action_rename_url,
+                action_delete_url=action_delete_url,
             )
-
-        size_fmt = f"{file.size} B"
-        if file.size > 1024 * 1024 * 1024:
-            size_fmt = f"{file.size / 1024 / 1024 / 1024:.2f} GB"
-        elif file.size > 1024 * 1024:
-            size_fmt = f"{file.size / 1024 / 1024:.2f} MB"
-        elif file.size > 1024:
-            size_fmt = f"{file.size / 1024:.2f} KB"
 
         return cls(
             id=file.id,
@@ -557,7 +662,7 @@ class ProfileFileV(BaseModel):
             sha1=file.sha1,
             size=file.size,
             url=file.url,
-            size_fmt=size_fmt,
+            size_fmt=cls.format_size(file.size),
             action_rename_url=f"{profile_prefix}{ctx_prefix}&mode=rename&target_type=file&target={file.id}",
             action_delete_url=f"{profile_prefix}{ctx_prefix}&mode=delete&target_type=file&target={file.id}",
         )
@@ -567,6 +672,17 @@ profile_dirs: dict[str, ProfileTabLink] = {
     "game_dir": ProfileTabLink(type="game_dir", name="<Game Directory>", db_type=ProfileFileType.GAME),
     "profile_dir": ProfileTabLink(type="profile_dir", name="<Profile Directory>", db_type=ProfileFileType.PROFILE),
 }
+
+
+def HiddenInput(*, name: str, value: str, required: bool = True) -> c.FormFieldInput:
+    return c.FormFieldInput(
+        name=name,
+        initial=value,
+        html_type="hidden",
+        required=required,
+        class_name="d-none",
+        title="",
+    )
 
 
 @app_get_fastui("/api/admin/profiles/{profile_id}/", dependencies=[Depends(admin_auth)])
@@ -607,11 +723,15 @@ async def profile_info(
 
             paths = file_path.split("/")
             if len(paths) > 1:
-                if paths[0] not in vdirs:
+                vdir = vdirs.get(paths[0])
+                if vdir is None:
                     name = f"{paths[0]}/"
-                    vdirs[paths[0]] = ProfileFileV.from_db(None, name, dir_type, dir_prefix, profile.id)
+                    vdirs[paths[0]] = vdir = ProfileFileV.from_db(None, name, dir_type, dir_prefix, profile.id)
                     if target_type == "dir" and target == name:
-                        target_obj = vdirs[paths[0]]
+                        target_obj = vdir
+
+                vdir.size += file.size
+                vdir.size_fmt = ProfileFileV.format_size(vdir.size)
 
                 continue
 
@@ -644,7 +764,7 @@ async def profile_info(
                 data_model=ProfileFileV,
                 columns=[
                     DisplayLookup(field="name", on_click=GoToEvent(url="{url}")),
-                    DisplayLookup(field="created_at_fmt", title="Created At"),
+                    DisplayLookup(field="created_at_fmt", title="Modified At"),
                     DisplayLookup(field="sha1"),
                     DisplayLookup(field="size_fmt", title="Size"),
                     DisplayLookup(field="action_rename", title="Actions", on_click=GoToEvent(url="{action_rename_url}")),
@@ -675,6 +795,31 @@ async def profile_info(
         btn_text = ""
         btn_class = ""
 
+        hidden_fields = [
+            HiddenInput(
+                name="file_type",
+                value=str(file_type.value if file_type is not None else -1),
+            ),
+            HiddenInput(
+                name="target_type",
+                value=str(target_type),
+            ),
+            HiddenInput(
+                name="target",
+                value=target,
+            ),
+            HiddenInput(
+                name="dir_type",
+                required=False,
+                value=dir_type,
+            ),
+            HiddenInput(
+                name="dir_prefix",
+                required=False,
+                value=dir_prefix,
+            ),
+        ]
+
         if mode == "rename":
             action_title = f"Renaming {target_obj.name}"
             btn_text = "Rename"
@@ -687,15 +832,17 @@ async def profile_info(
                             name="name",
                             title="Name",
                             required=True,
-                            initial=target_obj.name,
+                            initial=target_obj.name.rstrip('/'),
                         ),
+                        *hidden_fields,
                     ],
                     loading=[c.Spinner(text="Editing...")],
-                    submit_url="",  # TODO
+                    submit_url=f"{profile_prefix_api}/files/rename",
                     submit_trigger=PageEvent(name="action-form-submit"),
                     footer=[],
                 )
             ]
+
         elif mode == "delete":
             action_title = f"Deleting {target_obj.name}"
             btn_text = "Delete"
@@ -708,14 +855,20 @@ async def profile_info(
                     class_name="text-danger",
                 ),
                 c.Form(
-                    form_fields=[
-                    ],
-                    loading=[c.Spinner(text="Editing...")],
-                    submit_url="",  # TODO
+                    form_fields=hidden_fields,
+                    loading=[c.Spinner(text="Deleting...")],
+                    submit_url=f"{profile_prefix_api}/files/delete",
                     submit_trigger=PageEvent(name="action-form-submit"),
                     footer=[],
                 )
             ]
+
+        if target_type == "dir":
+            target_prefix = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target_obj.name}")), "/")
+            files_count = await ProfileFile.filter(
+                profile=profile, type=file_type, deleted=False, name__startswith=target_prefix,
+            ).count()
+            action_form.append(c.Text(text=f"{files_count} files will be affected"))
 
         action_mode = ActionMode(
             class_name="border-bottom mb-4 pb-3",
