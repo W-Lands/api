@@ -1,6 +1,6 @@
 from asyncio import get_event_loop
 from concurrent.futures.thread import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from time import time
 from uuid import uuid4
@@ -162,11 +162,18 @@ async def get_profiles(user: AuthUserOptDep, with_manifest: bool = True, only_pu
 async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 0):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise CustomBodyException(404, {"profile_id": ["Unknown profile."]})
-    min_date = max(int(profile.created_at.timestamp()), min_date)
-    max_date = min(int(profile.updated_at.timestamp()), max_date)
+
+    if min_date:
+        min_date = datetime.fromtimestamp(max(int(profile.created_at.timestamp()), min_date), timezone.utc)
+    else:
+        min_date = profile.created_at
+    if max_date:
+        max_date = datetime.fromtimestamp(min(int(profile.updated_at.timestamp()), max_date), timezone.utc)
+    else:
+        max_date = profile.updated_at
 
     files = await ProfileFile.filter(
-        profile=profile, created__at__gte=min_date, created_at__lte=max_date,
+        profile=profile, created_at__gte=min_date, created_at__lte=max_date,
     ).select_related("bak")
 
     return [
