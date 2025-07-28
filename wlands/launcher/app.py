@@ -165,7 +165,9 @@ async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 
     min_date = max(int(profile.created_at.timestamp()), min_date)
     max_date = min(int(profile.updated_at.timestamp()), max_date)
 
-    files = await ProfileFile.filter(profile=profile, created__at__gte=min_date, created_at__lte=max_date)
+    files = await ProfileFile.filter(
+        profile=profile, created__at__gte=min_date, created_at__lte=max_date,
+    ).select_related("bak")
 
     return [
         file.to_json()

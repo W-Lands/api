@@ -5,7 +5,7 @@ from .game_user_session import GameSession
 from .join_request import GameJoinRequest
 from .player_keypair import PlayerKeyPair
 from .player_report import PlayerReport
-from .profile_file import ProfileFile, ProfileFileType
+from .profile_file import ProfileFile, ProfileFileBak, ProfileFileType
 from .tg_user import TgUser
 from .user import User
 from .user_session import UserSession

@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from functools import partial
 from hashlib import sha1
 from time import time
@@ -16,12 +16,13 @@ from fastui.forms import fastui_form, FormFile
 from pydantic import BaseModel, EmailStr, Field, SecretStr
 from pytz import UTC
 from starlette.responses import HTMLResponse, JSONResponse
+from tortoise.expressions import Subquery
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
 from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
-    ProfileFileType
+    ProfileFileType, ProfileFileBak
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -457,6 +458,10 @@ async def upload_profile_files(
 
     files_to_create = []
     files_to_update = []
+    bak_to_create = []
+    fill_bak_files = []
+
+    now = datetime.now(timezone.utc)
     for file in files:
         file.file.seek(0)
         sha = sha1()
@@ -475,9 +480,15 @@ async def upload_profile_files(
         await S3.upload_object("wlands-profiles", f"files/{file_id}/{sha}", file.file)
 
         if existing is not None:
+            if existing.bak_id is None:
+                fill_bak_files.append(existing)
+                bak_to_create.append(ProfileFileBak.from_file(existing))
+
             existing.sha1 = sha
             existing.size = file.size
-            existing.deleted = True
+            existing.file_id = file_id
+            existing.created_at = now
+            existing.deleted = False
             files_to_update.append(existing)
         else:
             files_to_create.append(ProfileFile(
@@ -487,9 +498,17 @@ async def upload_profile_files(
                 sha1=sha,
                 size=file.size,
                 file_id=file_id,
+                created_at=now,
             ))
 
-    await ProfileFile.bulk_create(files_to_create)
+    if bak_to_create:
+        await ProfileFileBak.bulk_create_and_fill(bak_to_create, fill_bak_files)
+    if files_to_update:
+        await ProfileFile.bulk_update(
+            files_to_update, fields=["sha1", "size", "file_id", "created_at", "deleted", "bak_id"],
+        )
+    if files_to_create:
+        await ProfileFile.bulk_create(files_to_create)
 
     return [
         c.FireEvent(
@@ -513,8 +532,10 @@ async def rename_profile_files(
     new_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{name}")), "/")
     search_name = ".."
 
-    files_to_create = []
     files_to_update = []
+    bak_to_create = []
+    fill_bak_files = []
+
     if target_type == "file":
         file = await ProfileFile.get_or_none(profile=profile, type=file_type, deleted=False, id=int(target))
         search_name = file.name
@@ -527,26 +548,19 @@ async def rename_profile_files(
             profile=profile, type=file_type, deleted=False, name__startswith=name
         )
 
-    before = datetime.now(UTC) - timedelta(seconds=1)
     after = datetime.now(UTC)
     for file in files_to_update:
-        files_to_create.append(ProfileFile(
-            profile=profile,
-            created_at=before,
-            type=file_type,
-            name=file.name,
-            sha1="",
-            size=0,
-            file_id="-",
-            deleted=True,
-        ))
+        if file.bak_id is None:
+            fill_bak_files.append(file)
+            bak_to_create.append(ProfileFileBak.from_file(file))
 
         file.name = new_name + file.name[len(search_name):]
         file.created_at = after
 
+    if bak_to_create:
+        await ProfileFileBak.bulk_create_and_fill(bak_to_create, fill_bak_files)
     if files_to_update:
-        await ProfileFile.bulk_update(files_to_update, fields=["name", "created_at"])
-        await ProfileFile.bulk_create(files_to_create)
+        await ProfileFile.bulk_update(files_to_update, fields=["name", "created_at", "bak_id"])
 
     return [
         c.FireEvent(
@@ -568,6 +582,9 @@ async def delete_profile_files(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     files_to_update = []
+    bak_to_create = []
+    fill_bak_files = []
+
     if target_type == "file":
         file = await ProfileFile.get_or_none(profile=profile, type=file_type, deleted=False, id=int(target))
         if file is not None:
@@ -580,11 +597,17 @@ async def delete_profile_files(
 
     now = datetime.now(UTC)
     for file in files_to_update:
+        if file.bak_id is None:
+            fill_bak_files.append(file)
+            bak_to_create.append(ProfileFileBak.from_file(file))
+
         file.deleted = True
         file.created_at = now
 
+    if bak_to_create:
+        await ProfileFileBak.bulk_create_and_fill(bak_to_create, fill_bak_files)
     if files_to_update:
-        await ProfileFile.bulk_update(files_to_update, fields=["deleted", "created_at"])
+        await ProfileFile.bulk_update(files_to_update, fields=["deleted", "created_at", "bak_id"])
 
     return [
         c.FireEvent(
@@ -630,10 +653,16 @@ async def apply_profile_files(
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    was_updated_at = profile.updated_at
+
     file = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).order_by("-created_at").first()
     if file is not None:
         profile.updated_at = datetime.now(timezone.utc)
         await profile.save(update_fields=["updated_at"])
+
+    await ProfileFileBak.filter(id__in=Subquery(
+        ProfileFileBak.filter(profilefiles__created_at__gte=was_updated_at).values_list("id", flat=True)
+    )).delete()
 
     return [
         c.FireEvent(
@@ -650,12 +679,25 @@ async def revert_profile_files(
         profile_id: int,
         dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
 ):
-    # TODO: fix reverting files deletes deleted files instead of reverting deletion
-
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).delete()
+    await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at, bak=None).delete()
+
+    files = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).select_related("bak")
+    for file in files:
+        file.created_at = file.bak.created_at
+        file.name = file.bak.name
+        file.sha1 = file.bak.sha1
+        file.size = file.bak.size
+        file.file_id = file.bak.file_id
+        file.deleted = file.bak.deleted
+
+    await ProfileFile.bulk_update(files, fields=["created_at", "name", "sha1", "size", "file_id", "deleted"])
+
+    await ProfileFileBak.filter(id__in=Subquery(
+        ProfileFileBak.filter(profilefiles__created_at__gte=profile.updated_at).values_list("id", flat=True)
+    )).delete()
 
     return [
         c.FireEvent(

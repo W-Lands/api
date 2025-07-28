@@ -19,9 +19,8 @@ class ProfileFileType(IntEnum):
     GAME = 1
 
 
-class ProfileFile(Model):
+class ProfileFileBase(Model):
     id: int = fields.BigIntField(pk=True)
-    profile: models.GameProfile = fields.ForeignKeyField("models.GameProfile")
     created_at: datetime = fields.DatetimeField(auto_now_add=True)
     type: ProfileFileType = fields.IntEnumField(ProfileFileType)
     name: str = fields.TextField()
@@ -30,7 +29,8 @@ class ProfileFile(Model):
     file_id: str = fields.CharField(max_length=64, default=lambda: uuid4().hex)
     deleted: bool = fields.BooleanField(default=False)
 
-    profile_id: int
+    class Meta:
+        abstract = True
 
     @property
     def url(self) -> str:
@@ -52,3 +52,40 @@ class ProfileFile(Model):
             "download": download_info,
             "deleted": self.deleted,
         }
+
+
+class ProfileFileBak(ProfileFileBase):
+    real_id: int = fields.BigIntField(index=True)
+
+    @classmethod
+    def from_file(cls, file: ProfileFile) -> ProfileFileBak:
+        return ProfileFileBak(
+            real_id=file.id,
+            created_at=file.created_at,
+            type=file.type,
+            name=file.name,
+            sha1=file.sha1,
+            size=file.size,
+            file_id=file.file_id,
+            deleted=file.deleted,
+        )
+
+    @classmethod
+    async def bulk_create_and_fill(cls, create: list[ProfileFileBak], fill: list[ProfileFile]) -> None:
+        await ProfileFileBak.bulk_create(create)
+        baks = {bak.real_id: bak for bak in await ProfileFileBak.filter(real_id__in=[file.id for file in fill])}
+        for file in fill:
+            file.bak = baks[file.id]
+
+
+class ProfileFile(ProfileFileBase):
+    profile: models.GameProfile = fields.ForeignKeyField("models.GameProfile")
+    bak: ProfileFileBak | None = fields.ForeignKeyField("models.ProfileFileBak", null=True, default=None, on_delete=fields.SET_NULL)
+
+    profile_id: int
+    bak_id: int | None
+
+    def to_json(self) -> dict:
+        if self.bak is not None:
+            return self.bak.to_json()
+        return super().to_json()
