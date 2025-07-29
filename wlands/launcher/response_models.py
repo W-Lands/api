@@ -47,3 +47,23 @@ class ProfileFileInfo(BaseModel):
     updated_at: int
     download: ProfileFileDownload | None
     delete: bool
+
+
+class LauncherUpdateInfo(BaseModel):
+    version_code: int
+    version_name: str
+    created_at: int
+    sha1: str
+    url: str
+    size: int
+    changelog: str
+
+
+class LauncherAnnouncementInfo(BaseModel):
+    id: int
+    name: str
+    onetime: bool
+    created_at: int
+    active_from: int
+    active_to: int
+    text: str

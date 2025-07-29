@@ -13,11 +13,13 @@ from tortoise.expressions import Q
 
 from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
-from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo
+from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
+    LauncherUpdateInfo, LauncherAnnouncementInfo
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
-from ..models import User, GameSession, GameProfile, ProfileFile
+from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement
+from ..models.launcher_update import LauncherUpdate
 
 app = FastAPI()
 
@@ -168,4 +170,21 @@ async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 
     return [
         file.to_json()
         for file in files
+    ]
+
+
+@app.get("/updates/latest", response_model=list[LauncherUpdateInfo])
+async def get_launcher_latest_update():
+    version = await LauncherUpdate.last()
+    return [version.to_json()] if version else []
+
+
+@app.get("/announcements", response_model=list[LauncherAnnouncementInfo])
+async def get_launcher_announcements():
+    now = datetime.now(timezone.utc)
+    announcements = await LauncherAnnouncement.filter(active_from__lte=now, active_to__gte=now)
+
+    return [
+        announcement.to_json()
+        for announcement in announcements
     ]

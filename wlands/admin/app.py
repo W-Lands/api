@@ -1226,6 +1226,10 @@ async def profile_info(
     )
 
 
+# TODO: launcher updates
+# TODO: launcher announcements
+
+
 @app.get("/{path:path}")
 async def html_landing() -> HTMLResponse:
     return HTMLResponse(prebuilt_html(title="WLands admin panel", api_root_url=PREFIX_API))

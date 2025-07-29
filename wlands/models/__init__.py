@@ -9,6 +9,8 @@ from .profile_file import ProfileFile, ProfileFileLoc, ProfileFileAction
 from .tg_user import TgUser
 from .user import User
 from .user_session import UserSession
+from .launcher_update import LauncherUpdate
+from .launcher_announcement import LauncherAnnouncement
 
 UserPydantic = pydantic_model_creator(User, exclude=("password",), computed=("has_mfa",))
 ProfilePydantic = pydantic_model_creator(
