@@ -1,6 +1,13 @@
 from datetime import datetime
+from enum import IntEnum
 
 from tortoise import fields, Model
+
+
+class AnnouncementOs(IntEnum):
+    ALL = 0
+    WINDOWS = 1
+    LINUX = 2
 
 
 class LauncherAnnouncement(Model):
@@ -11,6 +18,7 @@ class LauncherAnnouncement(Model):
     active_from: datetime = fields.DatetimeField()
     active_to: datetime = fields.DatetimeField()
     text: str = fields.TextField()
+    os: AnnouncementOs = fields.IntEnumField(AnnouncementOs)
 
     def to_json(self) -> dict:
         return {

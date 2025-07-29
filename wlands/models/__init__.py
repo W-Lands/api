@@ -9,11 +9,15 @@ from .profile_file import ProfileFile, ProfileFileLoc, ProfileFileAction
 from .tg_user import TgUser
 from .user import User
 from .user_session import UserSession
-from .launcher_update import LauncherUpdate
-from .launcher_announcement import LauncherAnnouncement
+from .launcher_update import LauncherUpdate, UpdateOs
+from .launcher_announcement import LauncherAnnouncement, AnnouncementOs
 
 UserPydantic = pydantic_model_creator(User, exclude=("password",), computed=("has_mfa",))
 ProfilePydantic = pydantic_model_creator(
     GameProfile,
     include=("id", "name", "description", "created_at", "updated_at", "public",),
+)
+LauncherUpdatePydantic = pydantic_model_creator(
+    LauncherUpdate,
+    include=("id", "name", "created_at", "sha1", "size", "changelog", "public", "os",), computed=("url",),
 )

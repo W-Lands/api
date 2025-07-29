@@ -18,8 +18,8 @@ from .response_models import AuthResponse, SessionExpirationResponse, UserInfoRe
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
-from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement
-from ..models.launcher_update import LauncherUpdate
+from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs
+from ..models.launcher_update import LauncherUpdate, UpdateOs
 
 app = FastAPI()
 
@@ -174,15 +174,18 @@ async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 
 
 
 @app.get("/updates/latest", response_model=list[LauncherUpdateInfo])
-async def get_launcher_latest_update():
-    version = await LauncherUpdate.last()
+async def get_launcher_latest_update(os: UpdateOs):
+    version = await LauncherUpdate.filter(public=True, os=os).last()
     return [version.to_json()] if version else []
 
 
 @app.get("/announcements", response_model=list[LauncherAnnouncementInfo])
-async def get_launcher_announcements():
+async def get_launcher_announcements(os: AnnouncementOs = AnnouncementOs.ALL):
     now = datetime.now(timezone.utc)
-    announcements = await LauncherAnnouncement.filter(active_from__lte=now, active_to__gte=now)
+
+    announcements_q = Q(active_from__lte=now, active_to__gte=now)
+    announcements_q &= Q(os=os) | Q(os=AnnouncementOs.ALL)
+    announcements = await LauncherAnnouncement.filter(announcements_q)
 
     return [
         announcement.to_json()

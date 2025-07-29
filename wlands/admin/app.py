@@ -12,7 +12,7 @@ from fastui import prebuilt_html, FastUI, AnyComponent, components as c
 from fastui.components import forms as f
 from fastui.components.display import DisplayLookup
 from fastui.events import GoToEvent, AuthEvent, PageEvent
-from fastui.forms import fastui_form, FormFile
+from fastui.forms import fastui_form, FormFile, SelectOption
 from pydantic import BaseModel, EmailStr, Field, SecretStr
 from pytz import UTC
 from starlette.responses import HTMLResponse, JSONResponse
@@ -22,7 +22,7 @@ from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
 from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
-    ProfileFileLoc, ProfileFileAction
+    ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -97,6 +97,11 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
                     components=[c.Text(text="Profiles")],
                     on_click=GoToEvent(url=f"{PREFIX}/profiles"),
                     active=f'startswith:{PREFIX}/profiles',
+                ),
+                c.Link(
+                    components=[c.Text(text="Launcher Updates")],
+                    on_click=GoToEvent(url=f"{PREFIX}/launcher-updates"),
+                    active=f'startswith:{PREFIX}/launcher-updates',
                 ),
             ],
             end_links=[
@@ -681,6 +686,16 @@ async def revert_profile_files(
     ]
 
 
+def format_size(size: int) -> str:
+    if size > 1024 * 1024 * 1024:
+        return f"{size / 1024 / 1024 / 1024:.2f} GB"
+    elif size > 1024 * 1024:
+        return f"{size / 1024 / 1024:.2f} MB"
+    elif size > 1024:
+        return f"{size / 1024:.2f} KB"
+    return f"{size} B"
+
+
 class ProfileFileV(BaseModel):
     id: int
     created_at_fmt: str
@@ -697,16 +712,6 @@ class ProfileFileV(BaseModel):
 
     action_rename: str = "Rename"
     action_delete: str = "Delete"
-
-    @staticmethod
-    def format_size(size: int) -> str:
-        if size > 1024 * 1024 * 1024:
-            return f"{size / 1024 / 1024 / 1024:.2f} GB"
-        elif size > 1024 * 1024:
-            return f"{size / 1024 / 1024:.2f} MB"
-        elif size > 1024:
-            return f"{size / 1024:.2f} KB"
-        return f"{size} B"
 
     @classmethod
     def from_db(
@@ -749,7 +754,7 @@ class ProfileFileV(BaseModel):
             sha1=file.sha1,
             size=file.size,
             url=file.url,
-            size_fmt=cls.format_size(file.size),
+            size_fmt=format_size(file.size),
             action_rename_url=f"{action_prefix}&mode=rename",
             action_delete_url=f"{action_prefix}&mode=delete",
         )
@@ -825,7 +830,7 @@ async def profile_info(
                         target_obj = vdir
 
                 vdir.size += file.size
-                vdir.size_fmt = ProfileFileV.format_size(vdir.size)
+                vdir.size_fmt = format_size(vdir.size)
 
                 continue
 
@@ -1226,7 +1231,193 @@ async def profile_info(
     )
 
 
-# TODO: launcher updates
+@app_post_fastui("/api/admin/launcher-updates/")
+@app_post_fastui("/api/admin/launcher-updates")
+async def create_update(
+        admin: User = Depends(admin_auth),
+        name: str = Form(), changelog: str = Form(), os_type: UpdateOs = Form(),
+        file: UploadFile = FormFile(accept=".msi,.exe", max_size=1024 * 1024 * 256),
+):
+    file.file.seek(0)
+    sha = sha1()
+    sha.update(file.file.read())
+    sha = sha.hexdigest().lower()
+
+    file.file.seek(0)
+    await S3.upload_object("wlands-profiles", f"updates/{sha}", file.file)
+
+    update = await LauncherUpdate.create(
+        created_by=admin,
+        name=name,
+        sha1=sha,
+        size=file.size,
+        changelog=changelog,
+        public=False,
+        os=os_type,
+    )
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
+
+
+@app_get_fastui("/api/admin/launcher-updates/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/launcher-updates", dependencies=[Depends(admin_auth)])
+async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
+    PAGE_SIZE = 25
+
+    updates = [
+        await LauncherUpdatePydantic.from_tortoise_orm(update)
+        for update in await LauncherUpdate.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
+    ]
+
+    return make_page(
+        "Updates",
+
+        c.Button(text="Create update", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
+        c.Table(
+            data=updates,
+            data_model=LauncherUpdatePydantic,
+            columns=[
+                DisplayLookup(field="id"),
+                DisplayLookup(field="name", on_click=GoToEvent(url=f"{PREFIX}/launcher-updates/{{id}}/")),
+                DisplayLookup(field="created_at"),
+                DisplayLookup(field="size"),
+                DisplayLookup(field="public"),
+            ],
+        ),
+        c.Pagination(page=page, page_size=PAGE_SIZE, total=await LauncherUpdate.filter().count()),
+
+        c.Modal(
+            title="Create update",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="name",
+                            title="Name",
+                            required=True,
+                        ),
+                        f.FormFieldTextarea(
+                            name="changelog",
+                            title="Changelog",
+                            required=True,
+                        ),
+                        f.FormFieldSelect(
+                            name="os_type",
+                            title="Os",
+                            options=[
+                                SelectOption(value=str(UpdateOs.WINDOWS.value), label="Windows"),
+                                SelectOption(value=str(UpdateOs.LINUX.value), label="Linux"),
+                            ],
+                            required=True,
+                        ),
+                        c.FormFieldFile(
+                            name="file",
+                            title="Installer file",
+                            accept=".msi,.exe",
+                            multiple=False,
+                            required=True,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Creating update...")],
+                    submit_url=f"{PREFIX_API}/admin/launcher-updates",
+                    submit_trigger=PageEvent(name="create-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
+                ),
+                c.Button(
+                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="create-modal"),
+        ),
+    )
+
+
+@app_post_fastui("/api/admin/launcher-updates/{update_id}/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/launcher-updates/{update_id}", dependencies=[Depends(admin_auth)])
+async def edit_launcher_update(
+        update_id: int,
+        changelog: str = Form(), public: bool = Form(default=False),
+):
+    if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
+        raise HTTPException(status_code=404, detail="Update not found")
+
+    update.changelog = changelog
+    update.public = public
+    await update.save(update_fields=["changelog", "public"])
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
+
+
+@app_get_fastui("/api/admin/launcher-updates/{update_id}/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/launcher-updates/{update_id}", dependencies=[Depends(admin_auth)])
+async def launcher_update_info(update_id: int) -> list[AnyComponent]:
+    if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
+        raise HTTPException(status_code=404, detail="Update not found")
+
+    update_pd = await LauncherUpdatePydantic.from_tortoise_orm(update)
+    return make_page(
+        update.name,
+
+        c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/launcher-updates")),
+        c.Details(data=update_pd, fields=[
+            DisplayLookup(field="id"),
+            DisplayLookup(field="created_at"),
+            DisplayLookup(field="sha1"),
+            c.Display(title="Size", value=format_size(update.size)),
+            DisplayLookup(field="public"),
+            c.Display(title="Os", value=update.os.name.lower().title()),
+            DisplayLookup(field="changelog"),
+        ]),
+        c.Div(components=[
+            c.Button(
+                text="Download", on_click=GoToEvent(url=update.url()),
+            ),
+            c.Button(
+                text="Edit", on_click=PageEvent(name="edit-modal"), class_name="+ ms-2",
+            ),
+        ]),
+        c.Modal(
+            title="Edit update",
+            body=[
+                c.Form(
+                    form_fields=[
+                        f.FormFieldTextarea(
+                            name="changelog",
+                            title="Changelog",
+                            initial=update.changelog,
+                            required=True,
+                        ),
+                        c.FormFieldBoolean(
+                            name="public",
+                            title="Public",
+                            initial=update.public,
+                            required=False,
+                        )
+                    ],
+                    loading=[c.Spinner(text="Editing...")],
+                    submit_url=f"{PREFIX_API}/admin/launcher-updates/{update.id}",
+                    submit_trigger=PageEvent(name="edit-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
+                ),
+                c.Button(
+                    text="Edit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="edit-modal"),
+        ),
+    )
+
+
 # TODO: launcher announcements
 
 
