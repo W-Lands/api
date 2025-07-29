@@ -2,7 +2,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from wlands.launcher.manifest_models import VersionManifest
-from wlands.models import ProfileFileType
+from wlands.models import ProfileFileLoc
 
 
 class AuthResponse(BaseModel):
@@ -43,7 +43,7 @@ class ProfileFileDownload(BaseModel):
 
 class ProfileFileInfo(BaseModel):
     name: str
-    type: ProfileFileType
+    location: ProfileFileLoc
     updated_at: int
     download: ProfileFileDownload | None
-    deleted: bool
+    delete: bool

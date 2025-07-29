@@ -16,13 +16,13 @@ from fastui.forms import fastui_form, FormFile
 from pydantic import BaseModel, EmailStr, Field, SecretStr
 from pytz import UTC
 from starlette.responses import HTMLResponse, JSONResponse
-from tortoise.expressions import Subquery
+from tortoise.expressions import Q
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
 from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
-    ProfileFileType, ProfileFileBak
+    ProfileFileLoc, ProfileFileAction
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -442,14 +442,14 @@ async def edit_profile_manifest(
 class ProfileTabLink(BaseModel):
     type: str
     name: str
-    db_type: ProfileFileType
+    db_type: ProfileFileLoc
 
 
 @app_post_fastui("/api/admin/profiles/{profile_id}/files/", dependencies=[Depends(admin_auth)])
 @app_post_fastui("/api/admin/profiles/{profile_id}/files", dependencies=[Depends(admin_auth)])
 async def upload_profile_files(
         profile_id: int,
-        directory: str | None = Form(default=None), file_type: ProfileFileType = Form(), dir_type: str | None = Form(),
+        directory: str | None = Form(default=None), file_loc: ProfileFileLoc = Form(), dir_type: str | None = Form(),
         dir_prefix: str = Form(default=""),
         files: list[UploadFile] = FormFile(max_size=128 * 1024 * 1024),
 ):
@@ -457,9 +457,6 @@ async def upload_profile_files(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     files_to_create = []
-    files_to_update = []
-    bak_to_create = []
-    fill_bak_files = []
 
     now = datetime.now(timezone.utc)
     for file in files:
@@ -471,42 +468,22 @@ async def upload_profile_files(
         path = f"{dir_prefix}/{directory}/{file.filename}".replace("\\", "/")
         name = os.path.relpath(os.path.normpath(os.path.join("/", path)), "/")
 
-        existing = await ProfileFile.get_or_none(profile=profile, type=file_type, name=name)
-        if existing is not None and existing.sha1 == sha and existing.size == file.size:
-            continue
-
         file.file.seek(0)
         file_id = uuid4().hex
         await S3.upload_object("wlands-profiles", f"files/{file_id}/{sha}", file.file)
 
-        if existing is not None:
-            if existing.bak_id is None:
-                fill_bak_files.append(existing)
-                bak_to_create.append(ProfileFileBak.from_file(existing))
+        files_to_create.append(ProfileFile(
+            name=name,
+            parent=os.path.dirname(name),
+            profile=profile,
+            created_at=now,
+            location=file_loc,
+            action=ProfileFileAction.DOWNLOAD,
+            sha1=sha,
+            size=file.size,
+            file_id=file_id,
+        ))
 
-            existing.sha1 = sha
-            existing.size = file.size
-            existing.file_id = file_id
-            existing.created_at = now
-            existing.deleted = False
-            files_to_update.append(existing)
-        else:
-            files_to_create.append(ProfileFile(
-                profile=profile,
-                type=file_type,
-                name=name,
-                sha1=sha,
-                size=file.size,
-                file_id=file_id,
-                created_at=now,
-            ))
-
-    if bak_to_create:
-        await ProfileFileBak.bulk_create_and_fill(bak_to_create, fill_bak_files)
-    if files_to_update:
-        await ProfileFile.bulk_update(
-            files_to_update, fields=["sha1", "size", "file_id", "created_at", "deleted", "bak_id"],
-        )
     if files_to_create:
         await ProfileFile.bulk_create(files_to_create)
 
@@ -523,7 +500,7 @@ async def upload_profile_files(
 @app_post_fastui("/api/admin/profiles/{profile_id}/files/rename", dependencies=[Depends(admin_auth)])
 async def rename_profile_files(
         profile_id: int, name: str = Form(),
-        file_type: ProfileFileType = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
+        file_loc: ProfileFileLoc = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
         dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
 ):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
@@ -532,35 +509,38 @@ async def rename_profile_files(
     new_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{name}")), "/")
     search_name = ".."
 
-    files_to_update = []
-    bak_to_create = []
-    fill_bak_files = []
+    files = []
+    files_to_create = []
+    seen_files = set()
 
     if target_type == "file":
-        file = await ProfileFile.get_or_none(profile=profile, type=file_type, deleted=False, id=int(target))
+        file = await ProfileFile.get_or_none(
+            profile=profile, location=file_loc, id=int(target),
+        )
         search_name = file.name
         if file is not None:
-            files_to_update.append(file)
+            files.append(file)
     elif target_type == "dir":
-        name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
-        search_name = name
-        files_to_update = await ProfileFile.filter(
-            profile=profile, type=file_type, deleted=False, name__startswith=name
-        )
+        parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
+        search_name = parent_name
+        files = await ProfileFile.filter(
+            profile=profile, location=file_loc, parent__startswith=parent_name
+        ).order_by("-created_at")
 
-    after = datetime.now(UTC)
-    for file in files_to_update:
-        if file.bak_id is None:
-            fill_bak_files.append(file)
-            bak_to_create.append(ProfileFileBak.from_file(file))
+    now = datetime.now(UTC)
+    for file in files:
+        if file.name in seen_files:
+            continue
+        seen_files.add(file.name)
 
-        file.name = new_name + file.name[len(search_name):]
-        file.created_at = after
+        file.profile = profile
+        if (cloned := file.clone_delete(now)) is not None:
+            files_to_create.append(cloned)
+        if (cloned := file.clone_rename(new_name + file.name[len(search_name):], now)) is not None:
+            files_to_create.append(cloned)
 
-    if bak_to_create:
-        await ProfileFileBak.bulk_create_and_fill(bak_to_create, fill_bak_files)
-    if files_to_update:
-        await ProfileFile.bulk_update(files_to_update, fields=["name", "created_at", "bak_id"])
+    if files_to_create:
+        await ProfileFile.bulk_create(files_to_create)
 
     return [
         c.FireEvent(
@@ -575,39 +555,37 @@ async def rename_profile_files(
 @app_post_fastui("/api/admin/profiles/{profile_id}/files/delete", dependencies=[Depends(admin_auth)])
 async def delete_profile_files(
         profile_id: int,
-        file_type: ProfileFileType = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
+        file_loc: ProfileFileLoc = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
         dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
 ):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    files_to_update = []
-    bak_to_create = []
-    fill_bak_files = []
+    files = []
+    files_to_create = []
+    seen_files = set()
 
     if target_type == "file":
-        file = await ProfileFile.get_or_none(profile=profile, type=file_type, deleted=False, id=int(target))
+        file = await ProfileFile.get_or_none(profile=profile, location=file_loc, id=int(target))
         if file is not None:
-            files_to_update.append(file)
+            files.append(file)
     elif target_type == "dir":
-        name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
-        files_to_update = await ProfileFile.filter(
-            profile=profile, type=file_type, deleted=False, name__startswith=name
-        )
+        parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
+        files = await ProfileFile.filter(profile=profile, location=file_loc, parent__startswith=parent_name)\
+            .order_by("-created_at")
 
     now = datetime.now(UTC)
-    for file in files_to_update:
-        if file.bak_id is None:
-            fill_bak_files.append(file)
-            bak_to_create.append(ProfileFileBak.from_file(file))
+    for file in files:
+        if file.name in seen_files:
+            continue
+        seen_files.add(file.name)
 
-        file.deleted = True
-        file.created_at = now
+        file.profile = profile
+        if (cloned := file.clone_delete(now)) is not None:
+            files_to_create.append(cloned)
 
-    if bak_to_create:
-        await ProfileFileBak.bulk_create_and_fill(bak_to_create, fill_bak_files)
-    if files_to_update:
-        await ProfileFile.bulk_update(files_to_update, fields=["deleted", "created_at", "bak_id"])
+    if files_to_create:
+        await ProfileFile.bulk_create(files_to_create)
 
     return [
         c.FireEvent(
@@ -625,22 +603,27 @@ async def unapplied_files_list(profile_id: int):
         raise HTTPException(status_code=404, detail="Profile not found")
 
     dir_name = {
-        ProfileFileType.GAME: "<game>",
-        ProfileFileType.PROFILE: "<profile>",
+        ProfileFileLoc.GAME: "<game>",
+        ProfileFileLoc.PROFILE: "<profile>",
     }
 
-    result = ""
+    result = []
     files = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at)\
-        .order_by("deleted", "created_at")
+        .order_by("created_at")
 
     for file in files:
-        text = f" - **{dir_name.get(file.type, 'Unknown')}**/`{file.name}`"
-        if file.deleted:
+        text = f" - **{dir_name.get(file.location, 'Unknown')}**/`{file.name}`"
+        if file.action is ProfileFileAction.DOWNLOAD:
+            text += " - new"
+        elif file.action is ProfileFileAction.DELETE:
             text += " - deleted (or renamed)"
-        result += f"{text}\n"
+        else:
+            text += " - **UNKNOWN ACTION**"
+
+        result.append(text)
 
     return [
-        c.Markdown(text=result)
+        c.Markdown(text="\n".join(result))
     ]
 
 
@@ -653,16 +636,21 @@ async def apply_profile_files(
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    was_updated_at = profile.updated_at
+    seen_paths = set()
+    delete_q = Q()
+    for file in await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).order_by("-created_at"):
+        key = (file.location, file.name)
+        if key in seen_paths:
+            continue
+        delete_q |= Q(location=file.location, name=file.name, created_at__lt=file.created_at, id__not=file.id)
+        seen_paths.add(key)
+
+    await ProfileFile.filter(delete_q, profile=profile, created_at__gt=profile.updated_at).delete()
 
     file = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).order_by("-created_at").first()
     if file is not None:
         profile.updated_at = datetime.now(timezone.utc)
         await profile.save(update_fields=["updated_at"])
-
-    await ProfileFileBak.filter(id__in=Subquery(
-        ProfileFileBak.filter(profilefiles__created_at__gte=was_updated_at).values_list("id", flat=True)
-    )).delete()
 
     return [
         c.FireEvent(
@@ -682,22 +670,7 @@ async def revert_profile_files(
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at, bak=None).delete()
-
-    files = await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).select_related("bak")
-    for file in files:
-        file.created_at = file.bak.created_at
-        file.name = file.bak.name
-        file.sha1 = file.bak.sha1
-        file.size = file.bak.size
-        file.file_id = file.bak.file_id
-        file.deleted = file.bak.deleted
-
-    await ProfileFile.bulk_update(files, fields=["created_at", "name", "sha1", "size", "file_id", "deleted"])
-
-    await ProfileFileBak.filter(id__in=Subquery(
-        ProfileFileBak.filter(profilefiles__created_at__gte=profile.updated_at).values_list("id", flat=True)
-    )).delete()
+    await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).delete()
 
     return [
         c.FireEvent(
@@ -783,8 +756,8 @@ class ProfileFileV(BaseModel):
 
 
 profile_dirs: dict[str, ProfileTabLink] = {
-    "game_dir": ProfileTabLink(type="game_dir", name="<Game Directory>", db_type=ProfileFileType.GAME),
-    "profile_dir": ProfileTabLink(type="profile_dir", name="<Profile Directory>", db_type=ProfileFileType.PROFILE),
+    "game_dir": ProfileTabLink(type="game_dir", name="<Game Directory>", db_type=ProfileFileLoc.GAME),
+    "profile_dir": ProfileTabLink(type="profile_dir", name="<Profile Directory>", db_type=ProfileFileLoc.PROFILE),
 }
 
 
@@ -812,7 +785,7 @@ async def profile_info(
     profile_prefix = f"{PREFIX}/profiles/{profile.id}/"
     profile_prefix_api = f"{PREFIX_API}/admin/profiles/{profile.id}"
 
-    file_type: ProfileFileType | None = None
+    file_loc: ProfileFileLoc | None = None
 
     dir_prefix = dir_prefix.strip()
     dir_prefix = os.path.relpath(os.path.normpath(os.path.join("/", dir_prefix)), "/")
@@ -823,17 +796,24 @@ async def profile_info(
 
     if dir_type in profile_dirs:
         prof_dir = profile_dirs[dir_type]
-        file_type = prof_dir.db_type
+        file_loc = prof_dir.db_type
 
         files = await ProfileFile.filter(
-            profile=profile, type=file_type, deleted=False, name__startswith=dir_prefix,
-        ).order_by("name")
+            profile=profile, location=file_loc, parent__startswith=dir_prefix,
+        ).order_by("-created_at")
 
         vdirs = {}
         vfiles = []
+        seen_files = set()
 
         for file in files:
             file_path = file.name[len(dir_prefix):].lstrip("/")
+            if file_path in seen_files:
+                continue
+
+            seen_files.add(file_path)
+            if file.action is ProfileFileAction.DELETE:
+                continue
 
             paths = file_path.split("/")
             if len(paths) > 1:
@@ -853,7 +833,10 @@ async def profile_info(
             if target_type == "file" and target == str(file.id):
                 target_obj = vfiles[-1]
 
-        vfiles = [*sorted(list(vdirs.values()), key=lambda e: e.name), *sorted(vfiles, key=lambda e: e.name)]
+        vfiles = [
+            *sorted(list(vdirs.values()), key=lambda e: e.name),
+            *sorted(vfiles, key=lambda e: e.name),
+        ]
 
         if dir_prefix:
             vfiles.insert(0, ProfileFileV.from_db(None, "..", dir_type, dir_prefix, profile.id))
@@ -913,8 +896,8 @@ async def profile_info(
 
         hidden_fields = [
             HiddenInput(
-                name="file_type",
-                value=str(file_type.value if file_type is not None else -1),
+                name="file_loc",
+                value=str(file_loc.value if file_loc is not None else -1),
             ),
             HiddenInput(
                 name="target_type",
@@ -982,9 +965,10 @@ async def profile_info(
         if target_type == "dir":
             target_prefix = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target_obj.name}")), "/")
             files_count = await ProfileFile.filter(
-                profile=profile, type=file_type, deleted=False, name__startswith=target_prefix,
+                profile=profile, location=file_loc, action__not=ProfileFileAction.DELETE,
+                parent__startswith=target_prefix,
             ).count()
-            action_form.append(c.Text(text=f"{files_count} files will be affected"))
+            action_form.append(c.Text(text=f"~{files_count} files will be affected"))
 
         action_mode = ActionMode(
             class_name="border-bottom mb-4 pb-3",
@@ -1200,10 +1184,10 @@ async def profile_info(
                         ),
                         c.FormFieldInput(
                             title="",
-                            name="file_type",
+                            name="file_loc",
                             html_type="hidden",
                             required=True,
-                            initial=file_type.value if file_type is not None else -1,
+                            initial=file_loc.value if file_loc is not None else -1,
                             class_name="d-none",
                         ),
                         c.FormFieldInput(
