@@ -12,10 +12,10 @@ from pytz import UTC
 from tortoise.expressions import Q
 
 from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
-from .request_models import LoginData, TokenRefreshData, PatchUserData, PresignUrl
+from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo
 from .utils import Mfa, getImage
-from ..config import S3, S3_PUBLIC
+from ..config import S3
 from ..exceptions import CustomBodyException
 from ..models import User, GameSession, GameProfile, ProfileFile
 
@@ -133,16 +133,6 @@ async def upload_logs(log: UploadFile, user: AuthUserDep, session: str | None = 
 
     file = BytesIO(await log.read())
     await S3.upload_object("wlands", f"logs/{date}/{user.id}/{session}/{int(time() % 86400)}.txt", file)
-
-
-@app.post("/storage/presign")
-async def presign_s3(data: PresignUrl, user: AuthUserDep):
-    if not user.admin:
-        raise CustomBodyException(403, {"user": ["Insufficient privileges."]})
-
-    return {
-        "url": S3_PUBLIC.share("wlands-updates", data.key, 60 * 60, True)
-    }
 
 
 @app.get("/profiles", response_model=list[ProfileInfo])

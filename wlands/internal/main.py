@@ -1,5 +1,3 @@
-from hashlib import sha1
-from io import BytesIO
 from uuid import UUID
 
 from bcrypt import gensalt, hashpw, checkpw
@@ -8,11 +6,11 @@ from starlette.responses import JSONResponse
 from tortoise.contrib.fastapi import register_tortoise
 from tortoise.expressions import Q
 
-from .schemas import CreateUser, EditUser, CreateUpdate
-from ..config import DATABASE_URL, INTERNAL_AUTH_TOKEN, S3, S3_ENDPOINT
+from .schemas import CreateUser, EditUser
+from ..config import DATABASE_URL, INTERNAL_AUTH_TOKEN
 from ..exceptions import CustomBodyException
 from ..launcher.app import edit_texture
-from ..models import User, TgUser, GameSession, UserSession, Update
+from ..models import User, TgUser, GameSession, UserSession
 
 app = FastAPI()
 
@@ -127,50 +125,3 @@ async def ban_user(user_id: UUID, authorization: str | None = Header(default=Non
 
     user.banned = False
     await user.save(update_fields=["banned"])
-
-
-@app.post("/updates/new")
-async def create_update(data: CreateUpdate, authorization: str | None = Header(default=None)):
-    if authorization != INTERNAL_AUTH_TOKEN:
-        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
-
-    new_update = await Update.create(is_base=data.base, os=data.os, arch=data.arch, pending=True)
-
-    return {"id": new_update.id}
-
-
-@app.put("/updates/{update_id}/{file_path}", status_code=204)
-async def upload_file(update_id: int, file_path: str, request: Request, authorization: str | None = Header(default=None)):
-    if authorization != INTERNAL_AUTH_TOKEN:
-        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
-
-    if (update := await Update.get_or_none(id=update_id)) is None:
-        raise CustomBodyException(400, {"error_message": "Unknown update"})
-    if not update.pending:
-        raise CustomBodyException(400, {"error_message": "Cannot edit this update"})
-
-    if update.is_base:
-        update_id = f"b{update_id}"
-
-    file = BytesIO(await request.body())
-    sha1_hash = sha1(file.read()).digest()
-    file.seek(0)
-    await S3.upload_file("wlands-updates", f"{update_id}/{sha1_hash}", file)
-    update.files.append(
-        {"url": f"{S3_ENDPOINT}/wlands-updates/{update_id}/{sha1_hash}", "path": file_path, "hash": sha1_hash}
-    )
-    await update.save(update_fields=["files"])
-
-    
-@app.post("/updates/{update_id}", status_code=204)
-async def save_update(update_id: int, authorization: str | None = Header(default=None)):
-    if authorization != INTERNAL_AUTH_TOKEN:
-        raise CustomBodyException(401, {"error_message": "Wrong auth token"})
-
-    if (update := await Update.get_or_none(id=update_id)) is None:
-        raise CustomBodyException(400, {"error_message": "Unknown update"})
-    if not update.pending:
-        raise CustomBodyException(400, {"error_message": "Cannot edit this update"})
-
-    update.pending = False
-    await update.save(update_fields=["pending"])
