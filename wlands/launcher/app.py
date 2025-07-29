@@ -172,7 +172,8 @@ async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 
     else:
         max_date = profile.updated_at
 
-    files = await ProfileFile.filter(profile=profile, created_at__gte=min_date, created_at__lte=max_date)
+    files = await ProfileFile.filter(profile=profile, created_at__gte=min_date, created_at__lte=max_date)\
+        .order_by("created_at")
 
     return [
         file.to_json()
