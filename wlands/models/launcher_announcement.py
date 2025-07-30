@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 from datetime import datetime
 from enum import IntEnum
 
 from tortoise import fields, Model
+
+from wlands import models
 
 
 class AnnouncementOs(IntEnum):
@@ -13,6 +17,7 @@ class AnnouncementOs(IntEnum):
 class LauncherAnnouncement(Model):
     id: int = fields.BigIntField(pk=True)
     name: str = fields.CharField(max_length=64)
+    created_by: models.User = fields.ForeignKeyField("models.User")
     onetime: bool = fields.BooleanField(default=True)
     created_at: datetime = fields.DatetimeField(auto_now_add=True)
     active_from: datetime = fields.DatetimeField()

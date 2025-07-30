@@ -21,3 +21,7 @@ LauncherUpdatePydantic = pydantic_model_creator(
     LauncherUpdate,
     include=("id", "name", "created_at", "sha1", "size", "changelog", "public", "os",), computed=("url",),
 )
+LauncherAnnouncementPydantic = pydantic_model_creator(
+    LauncherAnnouncement,
+    include=("id", "name", "onetime", "created_at", "active_from", "active_to", "text", "os",),
+)

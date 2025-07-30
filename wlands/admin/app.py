@@ -22,7 +22,8 @@ from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
 from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
-    ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs
+    ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs, LauncherAnnouncement, \
+    LauncherAnnouncementPydantic, AnnouncementOs
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -102,6 +103,11 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
                     components=[c.Text(text="Launcher Updates")],
                     on_click=GoToEvent(url=f"{PREFIX}/launcher-updates"),
                     active=f'startswith:{PREFIX}/launcher-updates',
+                ),
+                c.Link(
+                    components=[c.Text(text="Launcher Announcements")],
+                    on_click=GoToEvent(url=f"{PREFIX}/launcher-announcements"),
+                    active=f'startswith:{PREFIX}/launcher-announcements',
                 ),
             ],
             end_links=[
@@ -1418,7 +1424,216 @@ async def launcher_update_info(update_id: int) -> list[AnyComponent]:
     )
 
 
-# TODO: launcher announcements
+@app_post_fastui("/api/admin/launcher-announcements/")
+@app_post_fastui("/api/admin/launcher-announcements")
+async def create_announcement(
+        admin: User = Depends(admin_auth),
+        name: str = Form(), text: str = Form(), os_type: AnnouncementOs = Form(), onetime: bool = Form(default=False),
+        active_from: datetime = Form(), active_to: datetime = Form(),
+):
+    if active_from >= active_to:
+        raise HTTPException(status_code=400, detail="\"Active from\" cannot be bigger than \"Active to\"")
+
+    announcement = await LauncherAnnouncement.create(
+        created_by=admin,
+        name=name,
+        text=text,
+        onetime=onetime,
+        active_from=active_from.replace(tzinfo=timezone.utc),
+        active_to=active_to.replace(tzinfo=timezone.utc),
+        os=os_type,
+    )
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-announcements/{announcement.id}?{time()}"))]
+
+
+@app_get_fastui("/api/admin/launcher-announcements/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/launcher-announcements", dependencies=[Depends(admin_auth)])
+async def launcher_announcements_table(page: int = 1) -> list[AnyComponent]:
+    PAGE_SIZE = 25
+
+    announcements = [
+        await LauncherAnnouncementPydantic.from_tortoise_orm(ann)
+        for ann in await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
+    ]
+
+    return make_page(
+        "Announcements",
+
+        c.Button(text="Create announcement", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
+        c.Table(
+            data=announcements,
+            data_model=LauncherAnnouncementPydantic,
+            columns=[
+                DisplayLookup(field="id"),
+                DisplayLookup(field="name", on_click=GoToEvent(url=f"{PREFIX}/launcher-announcements/{{id}}/")),
+                DisplayLookup(field="created_at"),
+                DisplayLookup(field="active_from"),
+                DisplayLookup(field="active_to"),
+                DisplayLookup(field="onetime"),
+            ],
+        ),
+        c.Pagination(page=page, page_size=PAGE_SIZE, total=await LauncherAnnouncement.filter().count()),
+
+        c.Modal(
+            title="Create announcement",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="name",
+                            title="Name",
+                            required=True,
+                        ),
+                        c.FormFieldInput(
+                            name="active_from",
+                            title="Active from",
+                            html_type="datetime-local",
+                            required=True,
+                        ),
+                        c.FormFieldInput(
+                            name="active_to",
+                            title="Active to",
+                            html_type="datetime-local",
+                            required=True,
+                        ),
+                        f.FormFieldSelect(
+                            name="os_type",
+                            title="Os",
+                            options=[
+                                SelectOption(value=str(AnnouncementOs.ALL.value), label="All"),
+                                SelectOption(value=str(AnnouncementOs.WINDOWS.value), label="Windows"),
+                                SelectOption(value=str(AnnouncementOs.LINUX.value), label="Linux"),
+                            ],
+                            required=True,
+                        ),
+                        f.FormFieldTextarea(
+                            name="text",
+                            title="Text",
+                            required=True,
+                        ),
+                        c.FormFieldBoolean(
+                            name="onetime",
+                            title="Onetime",
+                            required=False,
+                            initial=True,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Creating announcement...")],
+                    submit_url=f"{PREFIX_API}/admin/launcher-announcements",
+                    submit_trigger=PageEvent(name="create-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
+                ),
+                c.Button(
+                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="create-modal"),
+        ),
+    )
+
+
+@app_post_fastui("/api/admin/launcher-announcements/{announcement_id}/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/launcher-announcements/{announcement_id}", dependencies=[Depends(admin_auth)])
+async def edit_launcher_announcement(
+        announcement_id: int,
+        text: str = Form(), onetime: bool = Form(default=False),
+        active_from: datetime = Form(), active_to: datetime = Form(),
+):
+    if active_from >= active_to:
+        raise HTTPException(status_code=400, detail="\"Active from\" cannot be bigger than \"Active to\"")
+
+    if (announcement := await LauncherAnnouncement.get_or_none(id=announcement_id)) is None:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+
+    announcement.text = text
+    announcement.active_from = active_from.replace(tzinfo=timezone.utc)
+    announcement.active_to = active_to.replace(tzinfo=timezone.utc)
+    announcement.onetime = onetime
+    await announcement.save(update_fields=["text", "active_from", "active_to", "onetime"])
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-announcements/{announcement.id}?{time()}"))]
+
+
+@app_get_fastui("/api/admin/launcher-announcements/{announcement_id}/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/launcher-announcements/{announcement_id}", dependencies=[Depends(admin_auth)])
+async def launcher_announcement_info(announcement_id: int) -> list[AnyComponent]:
+    if (announcement := await LauncherAnnouncement.get_or_none(id=announcement_id)) is None:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+
+    announcement_pd = await LauncherAnnouncementPydantic.from_tortoise_orm(announcement)
+    return make_page(
+        announcement.name,
+
+        c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/launcher-announcements")),
+        c.Details(data=announcement_pd, fields=[
+            DisplayLookup(field="id"),
+            DisplayLookup(field="created_at"),
+            DisplayLookup(field="active_from"),
+            DisplayLookup(field="active_to"),
+            c.Display(title="Os", value=announcement.os.name.lower().title()),
+            DisplayLookup(field="onetime"),
+            DisplayLookup(field="text"),
+        ]),
+        c.Div(components=[
+            c.Button(
+                text="Edit", on_click=PageEvent(name="edit-modal"), class_name="+ ms-2",
+            ),
+        ]),
+        c.Modal(
+            title="Edit announcement",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="active_from",
+                            title="Active from",
+                            html_type="datetime-local",
+                            required=True,
+                            initial=announcement.active_from.strftime("%Y-%m-%dT%H:%M"),
+                        ),
+                        c.FormFieldInput(
+                            name="active_to",
+                            title="Active to",
+                            html_type="datetime-local",
+                            required=True,
+                            initial=announcement.active_to.strftime("%Y-%m-%dT%H:%M"),
+                        ),
+                        f.FormFieldTextarea(
+                            name="text",
+                            title="Text",
+                            initial=announcement.text,
+                            required=True,
+                        ),
+                        c.FormFieldBoolean(
+                            name="onetime",
+                            title="Onetime",
+                            initial=announcement.onetime,
+                            required=False,
+                        )
+                    ],
+                    loading=[c.Spinner(text="Editing...")],
+                    submit_url=f"{PREFIX_API}/admin/launcher-announcements/{announcement.id}",
+                    submit_trigger=PageEvent(name="edit-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
+                ),
+                c.Button(
+                    text="Edit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="edit-modal"),
+        ),
+    )
 
 
 @app.get("/{path:path}")
