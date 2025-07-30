@@ -1241,7 +1241,7 @@ async def profile_info(
 @app_post_fastui("/api/admin/launcher-updates")
 async def create_update(
         admin: User = Depends(admin_auth),
-        name: str = Form(), changelog: str = Form(), os_type: UpdateOs = Form(),
+        code: int = Form(), name: str = Form(), changelog: str = Form(), os_type: UpdateOs = Form(),
         file: UploadFile = FormFile(accept=".msi,.exe", max_size=1024 * 1024 * 256),
 ):
     file.file.seek(0)
@@ -1254,6 +1254,7 @@ async def create_update(
 
     update = await LauncherUpdate.create(
         created_by=admin,
+        code=code,
         name=name,
         sha1=sha,
         size=file.size,
@@ -1284,6 +1285,7 @@ async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
             data_model=LauncherUpdatePydantic,
             columns=[
                 DisplayLookup(field="id"),
+                DisplayLookup(field="code"),
                 DisplayLookup(field="name", on_click=GoToEvent(url=f"{PREFIX}/launcher-updates/{{id}}/")),
                 DisplayLookup(field="created_at"),
                 DisplayLookup(field="size"),
@@ -1297,6 +1299,12 @@ async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
             body=[
                 c.Form(
                     form_fields=[
+                        c.FormFieldInput(
+                            name="code",
+                            title="Code",
+                            html_type="number",
+                            required=True,
+                        ),
                         c.FormFieldInput(
                             name="name",
                             title="Name",
@@ -1372,6 +1380,7 @@ async def launcher_update_info(update_id: int) -> list[AnyComponent]:
         c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/launcher-updates")),
         c.Details(data=update_pd, fields=[
             DisplayLookup(field="id"),
+            DisplayLookup(field="code"),
             DisplayLookup(field="created_at"),
             DisplayLookup(field="sha1"),
             c.Display(title="Size", value=format_size(update.size)),

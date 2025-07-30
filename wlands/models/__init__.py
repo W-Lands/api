@@ -19,7 +19,7 @@ ProfilePydantic = pydantic_model_creator(
 )
 LauncherUpdatePydantic = pydantic_model_creator(
     LauncherUpdate,
-    include=("id", "name", "created_at", "sha1", "size", "changelog", "public", "os",), computed=("url",),
+    include=("id", "code", "name", "created_at", "sha1", "size", "changelog", "public", "os",), computed=("url",),
 )
 LauncherAnnouncementPydantic = pydantic_model_creator(
     LauncherAnnouncement,

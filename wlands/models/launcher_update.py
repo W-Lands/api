@@ -16,6 +16,7 @@ class UpdateOs(IntEnum):
 
 class LauncherUpdate(Model):
     id: int = fields.BigIntField(pk=True)
+    code: int = fields.IntField()
     name: str = fields.CharField(max_length=64)
     created_by: models.User = fields.ForeignKeyField("models.User")
     created_at: datetime = fields.DatetimeField(auto_now_add=True)
@@ -27,12 +28,12 @@ class LauncherUpdate(Model):
 
     def url(self) -> str:
         return S3_PUBLIC.share(
-            "wlands-profiles", f"updates/{self.sha1}", download_filename=f"WLands-{self.name}-{self.id}.msi",
+            "wlands-profiles", f"updates/{self.sha1}", download_filename=f"WLands-{self.name}-{self.code}.msi",
         )
 
     def to_json(self) -> dict:
         return {
-            "version_code": self.id,
+            "version_code": self.code,
             "version_name": self.name,
             "created_at": int(self.created_at.timestamp()),
             "url": self.url(),
