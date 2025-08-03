@@ -36,14 +36,15 @@ class User(Model):
         return S3.share("wlands", f"capes/{self.id}/{self.cape}.png")
 
     def properties(self, signed: bool = False) -> list[dict[str, str]]:
-        props = []
         if not self.skin_url and not self.cape_url:
-            return props
+            return []
+
         actual_textures = {}
         if self.skin_url:
             actual_textures["SKIN"] = {"url": self.skin_url}
         if self.cape_url:
             actual_textures["CAPE"] = {"url": self.cape_url}
+
         textures = {
             "name": "textures",
             "value": b64encode(json.dumps({
@@ -54,15 +55,15 @@ class User(Model):
                 "textures": actual_textures
             }).encode("utf8")).decode("utf8")
         }
+
         if signed:
             signer = PKCS1_v1_5.new(YGGDRASIL_PRIVATE_KEY)
             digest = SHA1.new()
             digest.update(textures["value"].encode("utf8"))
             signature = signer.sign(digest)
             textures["signature"] = b64encode(signature).decode("utf8")
-        props.append(textures)
 
-        return props
+        return [textures]
 
     def has_mfa(self) -> bool:
         return self.mfa_key is not None

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
 from Crypto.PublicKey import RSA
@@ -55,26 +56,26 @@ async def player_certificates(user: User = Depends(mc_user_auth)):
     if keypair is None:
         priv = RSA.generate(2048)
         pub = priv.publickey()
+
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        sig_v2 = PlayerKeyPair.generate_signature(user, int(expires_at.timestamp() * 1000), pub)
+
         keypair = await PlayerKeyPair.create(
-            user=user, private_key=priv.export_key('PEM', pkcs=8).decode("utf8"),
-            public_key=pub.export_key('PEM').decode("utf8"), signature_v2="AA=="
+            user=user, private_key=priv.export_key("PEM", pkcs=8).decode("utf8"),
+            public_key=pub.export_key("PEM").decode("utf8"), signature_v2=sig_v2
         )
-        keypair.signature_v2 = keypair.generate_signature()
-        await keypair.save(update_fields=["signature_v2"])
 
     expMillis = str(keypair.expires.timestamp()).split(".")[1].ljust(6, "0")
     refMillis = str(keypair.refreshes.timestamp()).split(".")[1].ljust(6, "0")
     return {
         "keyPair": {
-            "privateKey": keypair.private_key.replace("BEGIN PRIVATE KEY", "BEGIN RSA PRIVATE KEY")
-            .replace("END PRIVATE KEY", "END RSA PRIVATE KEY"),
-            "publicKey": keypair.public_key.replace("BEGIN PUBLIC KEY", "BEGIN RSA PUBLIC KEY")
-            .replace("END PUBLIC KEY", "END RSA PUBLIC KEY"),
+            "privateKey": keypair.private_key.replace(" PRIVATE KEY", " RSA PRIVATE KEY"),
+            "publicKey": keypair.public_key.replace(" PUBLIC KEY", " RSA PUBLIC KEY"),
         },
         "publicKeySignature": keypair.signature,
         "publicKeySignatureV2": keypair.signature_v2,
-        "expiresAt": keypair.expires.strftime("%Y-%m-%dT%H:%M:%S.") + expMillis + "Z",
-        "refreshedAfter": keypair.refreshes.strftime("%Y-%m-%dT%H:%M:%S.") + refMillis + "Z",
+        "expiresAt": keypair.expires.strftime(f"%Y-%m-%dT%H:%M:%S.{expMillis}Z"),
+        "refreshedAfter": keypair.refreshes.strftime(f"%Y-%m-%dT%H:%M:%S.{refMillis}Z"),
     }
 
 
