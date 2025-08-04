@@ -67,3 +67,11 @@ class LauncherAnnouncementInfo(BaseModel):
     active_from: int
     active_to: int
     text: str
+
+
+class AuthlibAgentResponse(BaseModel):
+    version: int
+    size: int
+    sha1: str
+    url: str
+    min_launcher_version: int

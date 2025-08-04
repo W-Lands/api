@@ -23,7 +23,7 @@ from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
     ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs, LauncherAnnouncement, \
-    LauncherAnnouncementPydantic, AnnouncementOs
+    LauncherAnnouncementPydantic, AnnouncementOs, AuthlibAgent, AuthlibAgentPydantic
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -108,6 +108,11 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
                     components=[c.Text(text="Launcher Announcements")],
                     on_click=GoToEvent(url=f"{PREFIX}/launcher-announcements"),
                     active=f'startswith:{PREFIX}/launcher-announcements',
+                ),
+                c.Link(
+                    components=[c.Text(text="Authlib agent")],
+                    on_click=GoToEvent(url=f"{PREFIX}/authlib-agent"),
+                    active=f'startswith:{PREFIX}/authlib-agent',
                 ),
             ],
             end_links=[
@@ -1641,6 +1646,118 @@ async def launcher_announcement_info(announcement_id: int) -> list[AnyComponent]
                 ),
             ],
             open_trigger=PageEvent(name="edit-modal"),
+        ),
+    )
+
+
+@app_post_fastui("/api/admin/authlib-agent/")
+@app_post_fastui("/api/admin/authlib-agent")
+async def create_authlib_agent(
+        admin: User = Depends(admin_auth),
+        min_launcher_version: int = Form(default=None),
+        file: UploadFile | None = FormFile(accept=".jar", max_size=1024 * 1024),
+):
+    if file is None or file.size == 0:
+        prev_agent = await AuthlibAgent.filter().order_by("-id").first()
+        if prev_agent is None:
+            raise HTTPException(status_code=404, detail="There is no previous authlib agent available")
+        file_size = prev_agent.size
+        file_sha = prev_agent.sha1
+        file_id = prev_agent.file_id
+    else:
+        file.file.seek(0)
+        file_size = file.size
+        file_sha = sha1(file.file.read()).hexdigest().lower()
+        file_id = uuid4().hex
+
+        file.file.seek(0)
+        await S3.upload_object("wlands-profiles", f"authlib-agent/{file_id}/{file_sha}", file.file)
+
+    await AuthlibAgent.create(
+        created_by=admin,
+        size=file_size,
+        sha1=file_sha,
+        min_launcher_version=min_launcher_version,
+        file_id=file_id,
+    )
+
+    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/authlib-agent/?{time()}"))]
+
+
+@app_get_fastui("/api/admin/authlib-agent/", dependencies=[Depends(admin_auth)])
+@app_get_fastui("/api/admin/authlib-agent", dependencies=[Depends(admin_auth)])
+async def authlib_agent_info() -> list[AnyComponent]:
+    agent = await AuthlibAgent.filter().order_by("-id").first()
+    agent_pydantic = await AuthlibAgentPydantic.from_tortoise_orm(agent) if agent is not None else None
+
+    download_button = ()
+    if agent is not None:
+        download_button = (
+            c.Button(
+                text="Download current", on_click=GoToEvent(url=agent.url()), class_name="+ ms-2",
+            ),
+        )
+
+    details = c.Heading(text="No authlib agent", level=3)
+    if agent is not None:
+        details = c.Details(
+            data=agent_pydantic,
+            fields=[
+                DisplayLookup(field="id"),
+                DisplayLookup(field="created_at"),
+                DisplayLookup(field="size"),
+                DisplayLookup(field="sha1"),
+                DisplayLookup(field="min_launcher_version"),
+            ],
+        )
+
+    return make_page(
+        "Authlib Agent",
+
+
+        details,
+        c.Div(components=[
+            c.Button(
+                text="Upload new", on_click=PageEvent(name="upload-modal"),
+            ),
+            *download_button,
+        ]),
+
+        c.Modal(
+            title="Upload/edit authlib agent",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            html_type="number",
+                            name="min_launcher_version",
+                            title="Minimum launcher version",
+                            required=True,
+                            initial=str(agent.min_launcher_version) if agent is not None else "",
+                        ),
+                        c.FormFieldFile(
+                            name="file",
+                            title="Agent JAR file",
+                            required=agent is None,
+                            multiple=False,
+                            accept=".jar",
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Creating announcement...")],
+                    submit_url=f"{PREFIX_API}/admin/authlib-agent",
+                    submit_trigger=PageEvent(name="upload-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="upload-modal", clear=True)
+                ),
+                c.Button(
+                    text="Create", on_click=PageEvent(name="upload-form-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="upload-modal"),
         ),
     )
 

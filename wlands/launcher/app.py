@@ -14,11 +14,11 @@ from tortoise.expressions import Q
 from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
-    LauncherUpdateInfo, LauncherAnnouncementInfo
+    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
-from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs
+from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent
 from ..models.launcher_update import LauncherUpdate, UpdateOs
 
 app = FastAPI()
@@ -191,3 +191,21 @@ async def get_launcher_announcements(os: AnnouncementOs = AnnouncementOs.ALL):
         announcement.to_json()
         for announcement in announcements
     ]
+
+
+@app.get("/authlib-agent", response_model=AuthlibAgentResponse)
+async def get_authlib_agent():
+    agent = await AuthlibAgent.filter().order_by("-id").first()
+    if agent is not None:
+        return agent.to_json()
+
+    return {
+        "version": 0,
+        "size": 0,
+        "sha1": "unknown",
+        "url": "",
+        "min_launcher_version": 0,
+    }
+
+
+# TODO: profile servers ips

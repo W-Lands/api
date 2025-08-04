@@ -11,6 +11,7 @@ from .user import User
 from .user_session import UserSession
 from .launcher_update import LauncherUpdate, UpdateOs
 from .launcher_announcement import LauncherAnnouncement, AnnouncementOs
+from .authlib_agent import AuthlibAgent
 
 UserPydantic = pydantic_model_creator(User, exclude=("password",), computed=("has_mfa",))
 ProfilePydantic = pydantic_model_creator(
@@ -24,4 +25,8 @@ LauncherUpdatePydantic = pydantic_model_creator(
 LauncherAnnouncementPydantic = pydantic_model_creator(
     LauncherAnnouncement,
     include=("id", "name", "onetime", "created_at", "active_from", "active_to", "text", "os",),
+)
+AuthlibAgentPydantic = pydantic_model_creator(
+    AuthlibAgent,
+    include=("id", "created_at", "size", "sha1", "min_launcher_version",),
 )
