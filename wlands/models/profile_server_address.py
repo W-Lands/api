@@ -12,6 +12,7 @@ class ProfileServerAddress(Model):
 
     def to_json(self) -> dict:
         return {
+            "id": self.id,
             "name": self.name,
             "ip": self.ip,
         }
