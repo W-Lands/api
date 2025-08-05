@@ -16,7 +16,7 @@ from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
     LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo
 from .utils import Mfa, getImage
-from ..config import S3
+from ..config import S3, YGGDRASIL_PUBLIC_STR
 from ..exceptions import CustomBodyException
 from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, \
     ProfileServerAddress
@@ -206,6 +206,7 @@ async def get_authlib_agent():
         "sha1": "unknown",
         "url": "",
         "min_launcher_version": 0,
+        "yggdrasil_pubkey_b64": YGGDRASIL_PUBLIC_STR,
     }
 
 

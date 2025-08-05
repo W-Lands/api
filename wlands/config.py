@@ -17,9 +17,7 @@ DATABASE_URL = environ["DATABASE_URL"]
 MIGRATIONS_DIR = environ.get("MIGRATIONS_DIR", "./migrations")
 
 with open("keys/private.pem", "r") as privkey:
-    YGGDRASIL_PRIVATE_STR = privkey.read()
-    YGGDRASIL_PRIVATE_KEY = RSA.import_key(YGGDRASIL_PRIVATE_STR)
-    YGGDRASIL_PRIVATE_STR = "".join(YGGDRASIL_PRIVATE_STR.split("\n")[1:-2])
+    YGGDRASIL_PRIVATE_KEY = RSA.import_key(privkey.read())
 
 with open("keys/public.pem", "r") as pubkey:
     YGGDRASIL_PUBLIC_STR = pubkey.read()

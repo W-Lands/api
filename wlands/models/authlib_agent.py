@@ -3,7 +3,7 @@ from datetime import datetime
 from tortoise import Model, fields
 
 from wlands import models
-from wlands.config import S3_PUBLIC
+from wlands.config import S3_PUBLIC, YGGDRASIL_PUBLIC_STR
 
 
 class AuthlibAgent(Model):
@@ -28,4 +28,5 @@ class AuthlibAgent(Model):
             "sha1": self.sha1,
             "url": self.url(),
             "min_launcher_version": self.min_launcher_version,
+            "yggdrasil_pubkey_b64": YGGDRASIL_PUBLIC_STR,
         }

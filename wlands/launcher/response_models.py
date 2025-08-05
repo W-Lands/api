@@ -75,6 +75,7 @@ class AuthlibAgentResponse(BaseModel):
     sha1: str
     url: str
     min_launcher_version: int
+    yggdrasil_pubkey_b64: str
 
 
 class ProfileIpInfo(BaseModel):
