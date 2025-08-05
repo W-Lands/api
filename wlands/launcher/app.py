@@ -14,11 +14,12 @@ from tortoise.expressions import Q
 from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
-    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse
+    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo
 from .utils import Mfa, getImage
 from ..config import S3
 from ..exceptions import CustomBodyException
-from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent
+from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, \
+    ProfileServerAddress
 from ..models.launcher_update import LauncherUpdate, UpdateOs
 
 app = FastAPI()
@@ -208,4 +209,15 @@ async def get_authlib_agent():
     }
 
 
-# TODO: profile servers ips
+@app.get("/profiles/{profile_id}/ips", response_model=list[ProfileIpInfo])
+async def get_profile_ips(profile_id: int, user: AuthUserOptDep):
+    if user is None:
+        return []
+
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise CustomBodyException(404, {"profile_id": ["Unknown profile."]})
+
+    return [
+        ip.to_json()
+        for ip in await ProfileServerAddress.filter(profile=profile)
+    ]

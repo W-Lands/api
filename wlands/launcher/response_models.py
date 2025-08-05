@@ -75,3 +75,9 @@ class AuthlibAgentResponse(BaseModel):
     sha1: str
     url: str
     min_launcher_version: int
+
+
+class ProfileIpInfo(BaseModel):
+    id: int
+    name: str
+    ip: str

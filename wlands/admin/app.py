@@ -23,7 +23,7 @@ from wlands.config import S3
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
     ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs, LauncherAnnouncement, \
-    LauncherAnnouncementPydantic, AnnouncementOs, AuthlibAgent, AuthlibAgentPydantic
+    LauncherAnnouncementPydantic, AnnouncementOs, AuthlibAgent, AuthlibAgentPydantic, ProfileServerAddress
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -777,14 +777,121 @@ profile_dirs: dict[str, ProfileTabLink] = {
 }
 
 
-def HiddenInput(*, name: str, value: str, required: bool = True) -> c.FormFieldInput:
+def HiddenInput(*, name: str, value: str | int, required: bool = True) -> c.FormFieldInput:
     return c.FormFieldInput(
         name=name,
-        initial=value,
+        initial=str(value),
         html_type="hidden",
         required=required,
         class_name="d-none",
         title="",
+    )
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/addresses/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/addresses", dependencies=[Depends(admin_auth)])
+async def add_profile_address(
+        profile_id: int,
+        name: str = Form(), address: str = Form(),
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    await ProfileServerAddress.create(profile=profile, name=name, ip=address)
+
+    return [
+        c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))
+    ]
+
+
+@app_post_fastui("/api/admin/profiles/{profile_id}/addresses/{address_id}/delete/", dependencies=[Depends(admin_auth)])
+@app_post_fastui("/api/admin/profiles/{profile_id}/addresses/{address_id}/delete", dependencies=[Depends(admin_auth)])
+async def delete_profile_address(
+        profile_id: int, address_id: int,
+):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    if (address := await ProfileServerAddress.get_or_none(id=address_id)) is None:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    await address.delete()
+
+    return [
+        c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))
+    ]
+
+
+def ips_table_head() -> c.Div:
+    return c.Div(
+        class_name="row border-bottom pb-2 fw-bold",
+        components=[
+            c.Div(
+                class_name="col",
+                components=[
+                    c.Div(components=[c.Text(text="Name")]),
+                ],
+            ),
+            c.Div(
+                class_name="col",
+                components=[
+                    c.Div(components=[c.Text(text="Ip")]),
+                ],
+            ),
+            c.Div(
+                class_name="col d-flex flex-row-reverse",
+                components=[
+                    c.Div(components=[c.Text(text="Action")]),
+                ],
+            ),
+        ]
+    )
+
+
+def ips_table_row(profile_id: int, address_id: int, name: str, ip: str) -> c.Div:
+    address_prefix_api = f"{PREFIX_API}/admin/profiles/{profile_id}/addresses/{address_id}"
+    delete_event_name = f"delete-address-{address_id}-form-submit"
+
+    return c.Div(
+        class_name="row border-bottom my-1 py-2",
+        components=[
+            c.Form(
+                form_fields=[
+                    HiddenInput(
+                        name="profile_id",
+                        value=profile_id,
+                        required=True,
+                    ),
+                    HiddenInput(
+                        name="address_id",
+                        value=address_id,
+                        required=True,
+                    ),
+                ],
+                submit_url=f"{address_prefix_api}/delete",
+                submit_trigger=PageEvent(name=delete_event_name),
+                footer=[],
+            ),
+
+            c.Div(
+                class_name="col d-flex align-items-center",
+                components=[
+                    c.Div(components=[c.Text(text=name)]),
+                ],
+            ),
+            c.Div(
+                class_name="col d-flex align-items-center",
+                components=[
+                    c.Div(components=[c.Text(text=ip)]),
+                ],
+            ),
+            c.Div(
+                class_name="col d-flex flex-row-reverse align-items-center",
+                components=[
+                    c.Button(text="Remove", class_name="+ btn-danger", on_click=PageEvent(name=delete_event_name)),
+                ],
+            ),
+        ]
     )
 
 
@@ -1080,6 +1187,42 @@ async def profile_info(
             ]
         )
 
+    ips_table = []
+    if dir_type is None and mode is None:
+        ips = await ProfileServerAddress.filter(profile=profile)
+        ips_rows = [
+            ips_table_row(profile.id, ip.id, ip.name, ip.ip)
+            for ip in ips
+        ]
+
+        ips_head = c.Div(
+            class_name="d-flex flex-row justify-content-between align-items-center my-2 py-2 border-top",
+            components=[
+                c.Heading(text="Addresses", level=4, class_name="+ "),
+                c.Div(
+                    components=[
+                        c.Button(text="Add", on_click=PageEvent(name="address-modal")),
+                    ],
+                ),
+            ]
+        )
+
+        if ips_rows:
+            ips_table = [
+                ips_head,
+                c.Div(
+                    components=[
+                        ips_table_head(),
+                        *ips_rows,
+                    ]
+                ),
+            ]
+        else:
+            ips_table = [
+                ips_head,
+                c.Heading(text="No addresses added yet", level=5),
+            ]
+
     profile = await ProfilePydantic.from_tortoise_orm(profile)
     return make_page(
         profile.name,
@@ -1098,7 +1241,7 @@ async def profile_info(
             ]
         ),
         c.Div(
-            class_name="pb-4 border-bottom",
+            class_name="pb-2 mb-2 border-bottom",
             components=[
                 c.Button(
                     text="Edit", on_click=PageEvent(name="edit-modal")
@@ -1109,6 +1252,8 @@ async def profile_info(
             ]),
 
         *files_table,
+
+        *ips_table,
 
         c.Modal(
             title="Edit profile",
@@ -1238,6 +1383,44 @@ async def profile_info(
                 ),
             ],
             open_trigger=PageEvent(name="file-upload-modal"),
+        ),
+
+        c.Modal(
+            title="Add address",
+            body=[
+                c.Form(
+                    form_fields=[
+                        c.FormFieldInput(
+                            name="name",
+                            title="Name",
+                            required=True,
+                        ),
+                        f.FormFieldInput(
+                            name="address",
+                            title="Address",
+                            required=True,
+                        ),
+                        HiddenInput(
+                            name="profile_id",
+                            value=profile.id,
+                            required=True,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Adding...")],
+                    submit_url=f"{profile_prefix_api}/addresses",
+                    submit_trigger=PageEvent(name="address-form-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="address-modal", clear=True)
+                ),
+                c.Button(
+                    text="Add", on_click=PageEvent(name="address-form-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="address-modal"),
         ),
     )
 
