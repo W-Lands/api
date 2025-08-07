@@ -3,7 +3,7 @@ from datetime import datetime
 from tortoise import Model, fields
 
 from wlands import models
-from wlands.config import S3_PUBLIC, YGGDRASIL_PUBLIC_STR
+from wlands.config import S3_PUBLIC, YGGDRASIL_PUBLIC_STR, S3_FILES_BUCKET
 
 
 class AuthlibAgent(Model):
@@ -17,7 +17,7 @@ class AuthlibAgent(Model):
 
     def url(self) -> str:
         return S3_PUBLIC.share(
-            "wlands-profiles", f"authlib-agent/{self.file_id}/{self.sha1}",
+            S3_FILES_BUCKET, f"authlib-agent/{self.file_id}/{self.sha1}",
             download_filename=f"authlib-agent-{self.id}.jar",
         )
 

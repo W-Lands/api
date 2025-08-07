@@ -53,9 +53,7 @@ class LauncherUpdateInfo(BaseModel):
     version_code: int
     version_name: str
     created_at: int
-    sha1: str
-    url: str
-    size: int
+    repo_url: str
     changelog: str
 
 

@@ -20,6 +20,7 @@ pydantic = {extras = ["email"], version = "2.9.2"}
 aerich = "^0.9.1"
 python-multipart = "^0.0.20"
 fastui = "^0.7.0"
+pydantic-xml = "^2.17.3"
 
 
 [build-system]

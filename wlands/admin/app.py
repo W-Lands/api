@@ -1,10 +1,12 @@
 import os
+from asyncio import sleep
 from datetime import datetime, timezone
 from functools import partial
 from hashlib import sha1
 from time import time
 from typing import Self, Literal
 from uuid import UUID, uuid4
+from zipfile import ZipFile
 
 from bcrypt import checkpw, hashpw, gensalt
 from fastapi import FastAPI, Depends, Request, HTTPException, Form, UploadFile
@@ -19,8 +21,9 @@ from starlette.responses import HTMLResponse, JSONResponse
 from tortoise.expressions import Q
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
-from wlands.config import S3
+from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
+from wlands.launcher.qtifw_update_xml import Updates
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
     ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs, LauncherAnnouncement, \
     LauncherAnnouncementPydantic, AnnouncementOs, AuthlibAgent, AuthlibAgentPydantic, ProfileServerAddress
@@ -486,7 +489,7 @@ async def upload_profile_files(
 
         file.file.seek(0)
         file_id = uuid4().hex
-        await S3.upload_object("wlands-profiles", f"files/{file_id}/{sha}", file.file)
+        await S3.upload_object(S3_FILES_BUCKET, f"files/{file_id}/{sha}", file.file)
 
         files_to_create.append(ProfileFile(
             name=name,
@@ -1430,25 +1433,112 @@ async def profile_info(
 async def create_update(
         admin: User = Depends(admin_auth),
         code: int = Form(), name: str = Form(), changelog: str = Form(), os_type: UpdateOs = Form(),
-        file: UploadFile = FormFile(accept=".msi,.exe", max_size=1024 * 1024 * 256),
+        file: UploadFile = FormFile(accept=".zip", max_size=1024 * 1024 * 256),
 ):
+    size = 0
+    dir_id = uuid4()
     file.file.seek(0)
-    sha = sha1()
-    sha.update(file.file.read())
-    sha = sha.hexdigest().lower()
 
-    file.file.seek(0)
-    await S3.upload_object("wlands-profiles", f"updates/{sha}", file.file)
+    s3_prefix = f"updates/{dir_id}"
+
+    with ZipFile(file.file, "r") as zf:
+        await sleep(0)
+
+        with zf.open("Updates.xml", "r") as updates_index:
+            updates_index.seek(0, os.SEEK_END)
+            size += updates_index.tell()
+            if updates_index.tell() > 1024 * 32:
+                raise HTTPException(status_code=404, detail="Updates.xml size exceeds 32kb, i aint parsing all of that")
+
+            updates_index.seek(0)
+            updates_xml = updates_index.read()
+
+        await sleep(0)
+
+        updates = Updates.from_xml(updates_xml)
+        if not updates.checksum or not updates.package_updates or not updates.sha1 or not updates.metadata_name:
+            raise HTTPException(status_code=404, detail="Invalid Updates.xml: required `something` is missing")
+
+        await sleep(0)
+
+        with zf.open(updates.metadata_name, "r") as metadata_fp:
+            checksum = sha1()
+            while data := metadata_fp.read(64 * 1024):
+                await sleep(0)
+                checksum.update(data)
+
+            if checksum.hexdigest() != updates.sha1:
+                raise HTTPException(status_code=404, detail="Root metadata checksum mismatch")
+
+            size += metadata_fp.tell()
+
+            metadata_fp.seek(0)
+            await S3.upload_object(S3_FILES_BUCKET, f"{s3_prefix}/{updates.metadata_name}", metadata_fp)
+
+        for update in updates.package_updates:
+            with zf.open(f"{update.name}/{update.version}meta.7z", "r") as metadata_fp:
+                checksum = sha1()
+                while data := metadata_fp.read(64 * 1024):
+                    await sleep(0)
+                    checksum.update(data)
+
+                if checksum.hexdigest() != update.sha1:
+                    raise HTTPException(status_code=404, detail="Update metadata checksum mismatch")
+
+                size += metadata_fp.tell()
+
+                metadata_fp.seek(0)
+                await S3.upload_object(
+                    S3_FILES_BUCKET, f"{s3_prefix}/{update.name}/{update.version}meta.7z", metadata_fp,
+                )
+
+            content_size = 0
+            for archive in update.downloadable_archives.split(","):
+                with zf.open(f"{update.name}/{update.version}{archive}.sha1", "r") as content_sha_fp:
+                    await sleep(0)
+                    content_sha = content_sha_fp.read(40).decode("utf8")
+                    content_size += 40
+
+                    if len(content_sha) != 40:
+                        raise HTTPException(status_code=404, detail=f"Update \"{archive}\" checksum invalid")
+
+                    content_sha_fp.seek(0)
+                    await S3.upload_object(
+                        S3_FILES_BUCKET, f"{s3_prefix}/{update.name}/{update.version}{archive}.sha1", content_sha_fp,
+                    )
+
+                with zf.open(f"{update.name}/{update.version}{archive}", "r") as content_fp:
+                    checksum = sha1()
+                    while data := content_fp.read(64 * 1024):
+                        await sleep(0)
+                        content_size += len(data)
+                        checksum.update(data)
+
+                    if checksum.hexdigest() != content_sha:
+                        raise HTTPException(status_code=404, detail=f"Update \"{archive}\" checksum mismatch")
+
+                    content_fp.seek(0)
+                    await S3.upload_object(
+                        S3_FILES_BUCKET, f"{s3_prefix}/{update.name}/{update.version}{archive}", content_fp,
+                    )
+
+            if content_size != update.update_file.compressed_size:
+                raise HTTPException(status_code=404, detail=f"Update size mismatch")
+
+            size += content_size
+
+        with zf.open("Updates.xml", "r") as updates_index:
+            await S3.upload_object(S3_FILES_BUCKET, f"{s3_prefix}/Updates.xml", updates_index)
 
     update = await LauncherUpdate.create(
         created_by=admin,
         code=code,
         name=name,
-        sha1=sha,
-        size=file.size,
+        size=size,
         changelog=changelog,
         public=False,
         os=os_type,
+        dir_id=dir_id,
     )
 
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
@@ -1514,8 +1604,8 @@ async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
                         ),
                         c.FormFieldFile(
                             name="file",
-                            title="Installer file",
-                            accept=".msi,.exe",
+                            title="Zipped update repository",
+                            accept=".zip",
                             multiple=False,
                             required=True,
                         ),
@@ -1570,16 +1660,13 @@ async def launcher_update_info(update_id: int) -> list[AnyComponent]:
             DisplayLookup(field="id"),
             DisplayLookup(field="code"),
             DisplayLookup(field="created_at"),
-            DisplayLookup(field="sha1"),
             c.Display(title="Size", value=format_size(update.size)),
             DisplayLookup(field="public"),
             c.Display(title="Os", value=update.os.name.lower().title()),
             DisplayLookup(field="changelog"),
+            DisplayLookup(field="dir_id"),
         ]),
         c.Div(components=[
-            c.Button(
-                text="Download", on_click=GoToEvent(url=update.url()),
-            ),
             c.Button(
                 text="Edit", on_click=PageEvent(name="edit-modal"), class_name="+ ms-2",
             ),
@@ -1854,7 +1941,7 @@ async def create_authlib_agent(
         file_id = uuid4().hex
 
         file.file.seek(0)
-        await S3.upload_object("wlands-profiles", f"authlib-agent/{file_id}/{file_sha}", file.file)
+        await S3.upload_object(S3_FILES_BUCKET, f"authlib-agent/{file_id}/{file_sha}", file.file)
 
     await AuthlibAgent.create(
         created_by=admin,

@@ -8,7 +8,7 @@ from typing import Self
 from tortoise import fields, Model
 
 from wlands import models
-from wlands.config import S3_PUBLIC
+from wlands.config import S3_PUBLIC, S3_FILES_BUCKET
 
 
 class ProfileFileLoc(IntEnum):
@@ -44,7 +44,7 @@ class ProfileFile(Model):
     @property
     def url(self) -> str:
         return S3_PUBLIC.share(
-            "wlands-profiles", f"files/{self.file_id}/{self.sha1}", download_filename=self.name.rpartition("/")[2],
+            S3_FILES_BUCKET, f"files/{self.file_id}/{self.sha1}", download_filename=self.name.rpartition("/")[2],
         )
 
     def to_json(self) -> dict:

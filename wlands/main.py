@@ -8,7 +8,7 @@ from tortoise import Tortoise
 from tortoise.contrib.fastapi import register_tortoise
 
 from . import minecraft, launcher, admin
-from .config import DATABASE_URL, S3, MIGRATIONS_DIR
+from .config import DATABASE_URL, S3, MIGRATIONS_DIR, S3_FILES_BUCKET
 from .exceptions import CustomBodyException
 
 app = FastAPI()
@@ -44,13 +44,13 @@ register_tortoise(
 @app.on_event("startup")
 async def on_startup():
     if environ.get("SET_UPDATES_BUCKET_POLICY") == "1":
-        await S3.put_bucket_policy("wlands-profiles", {
+        await S3.put_bucket_policy(S3_FILES_BUCKET, {
             'Version': '2012-10-17',
             'Statement': [{
                 'Effect': 'Allow',
                 'Principal': {'AWS': ['*']},
                 'Action': ['s3:GetObject'],
-                'Resource': [f'arn:aws:s3:::wlands-profiles/*']
+                'Resource': [f'arn:aws:s3:::{S3_FILES_BUCKET}/*']
             }]
         })
 
