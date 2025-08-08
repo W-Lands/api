@@ -34,4 +34,5 @@ class LauncherUpdate(Model):
             "created_at": int(self.created_at.timestamp()),
             "repo_url": f"{S3_ENDPOINT_PUBLIC}/{S3_FILES_BUCKET}/updates/{self.dir_id}",
             "changelog": self.changelog,
+            "size": self.size,
         }

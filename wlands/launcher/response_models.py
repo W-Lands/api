@@ -55,6 +55,7 @@ class LauncherUpdateInfo(BaseModel):
     created_at: int
     repo_url: str
     changelog: str
+    size: int
 
 
 class LauncherAnnouncementInfo(BaseModel):
