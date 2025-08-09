@@ -17,5 +17,6 @@ RUN apk update && apk add --no-cache libmagic git bash && apk add --no-cache --v
 
 COPY . .
 RUN chmod +x entrypoint.sh
+RUN chmod +x entrypoint-internal.sh
 
 ENTRYPOINT ["./entrypoint.sh"]
