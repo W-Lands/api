@@ -60,3 +60,8 @@ async def on_startup():
 @launcher.app.exception_handler(CustomBodyException)
 async def custom_exception_handler(request: Request, exc: CustomBodyException):
     return JSONResponse(status_code=exc.code, content=exc.body)
+
+
+@app.get("/health")
+async def healthcheck():
+    return "ok"

@@ -125,3 +125,8 @@ async def ban_user(user_id: UUID, authorization: str | None = Header(default=Non
 
     user.banned = False
     await user.save(update_fields=["banned"])
+
+
+@app.get("/health")
+async def healthcheck():
+    return "ok"
