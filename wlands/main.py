@@ -8,7 +8,7 @@ from tortoise import generate_config
 from tortoise.contrib.fastapi import RegisterTortoise
 
 from . import minecraft, launcher, admin
-from .config import DATABASE_URL, S3, S3_FILES_BUCKET, ROOT_PATH
+from .config import DATABASE_URL, S3, S3_FILES_BUCKET
 from .exceptions import CustomBodyException
 
 
