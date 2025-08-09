@@ -27,3 +27,4 @@ with open("keys/public.pem", "r") as pubkey:
     YGGDRASIL_PUBLIC_STR = "".join(YGGDRASIL_PUBLIC_STR.split("\n")[1:-2])
 
 INTERNAL_AUTH_TOKEN = environ.get("INTERNAL_AUTH_TOKEN", b64encode(urandom(64)).decode("utf8"))
+ROOT_PATH = environ.get("ROOT_PATH", "")

@@ -47,6 +47,7 @@ services:
       - S3_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
       - SET_UPDATES_BUCKET_POLICY=${SET_UPDATES_BUCKET_POLICY}
       - MIGRATIONS_DIR=/migrations/wlands
+      - ROOT_PATH=/api
     depends_on:
       mariadb:
         condition: service_healthy

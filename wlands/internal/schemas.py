@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from wlands.launcher.schemas import PatchUserData
+from wlands.launcher.request_models import PatchUserData
 
 
 class CreateUser(BaseModel):

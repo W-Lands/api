@@ -1,58 +1,48 @@
+from contextlib import asynccontextmanager
 from os import environ
-from pathlib import Path
 
-from aerich import Command
 from fastapi import FastAPI, Request
+from httpx import RemoteProtocolError
 from starlette.responses import JSONResponse
-from tortoise import Tortoise
-from tortoise.contrib.fastapi import register_tortoise
+from tortoise import generate_config
+from tortoise.contrib.fastapi import RegisterTortoise
 
 from . import minecraft, launcher, admin
-from .config import DATABASE_URL, S3, MIGRATIONS_DIR, S3_FILES_BUCKET
+from .config import DATABASE_URL, S3, S3_FILES_BUCKET, ROOT_PATH
 from .exceptions import CustomBodyException
 
-app = FastAPI()
+
+@asynccontextmanager
+async def migrate_and_connect_orm(app_: FastAPI):
+    if environ.get("SET_UPDATES_BUCKET_POLICY") == "1":
+        policy_retries = 5
+        for i in range(policy_retries):
+            try:
+                await S3.put_bucket_policy(S3_FILES_BUCKET, {
+                    'Version': '2012-10-17',
+                    'Statement': [{
+                        'Effect': 'Allow',
+                        'Principal': {'AWS': ['*']},
+                        'Action': ['s3:GetObject'],
+                        'Resource': [f'arn:aws:s3:::{S3_FILES_BUCKET}/*']
+                    }]
+                })
+            except RemoteProtocolError:
+                if i == policy_retries - 1:
+                    raise
+
+                from asyncio import sleep
+                await sleep(3)
+
+    orm_config = generate_config(DATABASE_URL, app_modules={"models": ["wlands.models", "aerich.models"]})
+    async with RegisterTortoise(app=app_, config=orm_config, generate_schemas=True):
+        yield
+
+
+app = FastAPI(lifespan=migrate_and_connect_orm, openapi_url=None)
 app.mount("/minecraft", minecraft.app)
 app.mount("/launcher", launcher.app)
 app.mount("/admin", admin.app)
-
-
-@app.on_event("startup")
-async def migrate_orm():
-    command = Command({
-        "connections": {"default": DATABASE_URL},
-        "apps": {"models": {"models": ["wlands.models", "aerich.models"], "default_connection": "default"}},
-    }, location=MIGRATIONS_DIR)
-    await command.init()
-    if Path(MIGRATIONS_DIR).exists():
-        await command.migrate()
-        await command.upgrade(True)
-    else:
-        await command.init_db(True)
-    await Tortoise.close_connections()
-
-
-register_tortoise(
-    app,
-    db_url=DATABASE_URL,
-    modules={"models": ["wlands.models"]},
-    generate_schemas=True,
-    add_exception_handlers=False,
-)
-
-
-@app.on_event("startup")
-async def on_startup():
-    if environ.get("SET_UPDATES_BUCKET_POLICY") == "1":
-        await S3.put_bucket_policy(S3_FILES_BUCKET, {
-            'Version': '2012-10-17',
-            'Statement': [{
-                'Effect': 'Allow',
-                'Principal': {'AWS': ['*']},
-                'Action': ['s3:GetObject'],
-                'Resource': [f'arn:aws:s3:::{S3_FILES_BUCKET}/*']
-            }]
-        })
 
 
 @app.exception_handler(CustomBodyException)
