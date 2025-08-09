@@ -62,7 +62,7 @@ services:
   wlands-api-internal:
     build: .
     pull_policy: build
-    entrypoint: /wlands/entrypoint-internal.sh
+    command: /wlands/entrypoint-internal.sh
     networks: ['wlands']
     volumes: ['./keys:/wlands/keys']
     environment:
