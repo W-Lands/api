@@ -40,6 +40,8 @@ class VersionManifestLibraryDownload(BaseModel):
 class VersionManifestLibrary(BaseModel):
     name: str
     url: str | None = None
+    sha1: str | None = None
+    size: int | None = None
     rules: list[VersionManifestRule] | None = None
     downloads: VersionManifestLibraryDownload | None = None
     downloadOnly: bool = False

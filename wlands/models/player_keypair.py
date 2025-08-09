@@ -4,6 +4,7 @@ from base64 import b64encode
 from datetime import datetime, timedelta
 
 from Crypto.Hash import SHA1
+from Crypto.PublicKey import RSA
 from Crypto.PublicKey.RSA import RsaKey
 from Crypto.Signature import PKCS1_v1_5
 from pytz import UTC

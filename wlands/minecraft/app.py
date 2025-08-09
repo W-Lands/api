@@ -62,7 +62,7 @@ async def player_certificates(user: User = Depends(mc_user_auth)):
 
         keypair = await PlayerKeyPair.create(
             user=user, private_key=priv.export_key("PEM", pkcs=8).decode("utf8"),
-            public_key=pub.export_key("PEM").decode("utf8"), signature_v2=sig_v2
+            public_key=pub.export_key("PEM").decode("utf8"), signature_v2=sig_v2, expires=expires_at,
         )
 
     expMillis = str(keypair.expires.timestamp()).split(".")[1].ljust(6, "0")
