@@ -9,6 +9,7 @@ from PIL import Image
 from bcrypt import checkpw
 from fastapi import FastAPI, Depends, UploadFile
 from pytz import UTC
+from starlette.responses import RedirectResponse
 from tortoise.expressions import Q
 
 from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
@@ -16,7 +17,7 @@ from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
     LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo
 from .utils import Mfa, getImage
-from ..config import S3, YGGDRASIL_PUBLIC_STR
+from ..config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
 from ..exceptions import CustomBodyException
 from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, \
     ProfileServerAddress
@@ -178,6 +179,18 @@ async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 
 async def get_launcher_latest_update(os: UpdateOs):
     version = await LauncherUpdate.filter(public=True, os=os).last()
     return [version.to_json()] if version else []
+
+
+@app.get("/updates/latest/repo/{os}")
+async def get_launcher_latest_update_redirect(os: UpdateOs):
+    update = await LauncherUpdate.filter(public=True, os=os).last()
+
+    if update is not None:
+        url = f"{S3_ENDPOINT_PUBLIC}/{S3_FILES_BUCKET}/updates/{update.dir_id}"
+    else:
+        url = "http://unreachable.local"
+
+    return RedirectResponse(url)
 
 
 @app.get("/announcements", response_model=list[LauncherAnnouncementInfo])

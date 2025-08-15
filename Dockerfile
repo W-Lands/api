@@ -15,12 +15,12 @@ RUN apk update && apk add --no-cache libmagic git bash curl && apk add --no-cach
     apk del build-deps && \
     rm -rf /root/.cache $POETRY_CACHE_DIR/cache $POETRY_CACHE_DIR/artifacts
 
+RUN wget -O /usr/local/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_x86_64
+RUN chmod +x /usr/local/bin/dumb-init
+
 COPY . .
 RUN chmod +x entrypoint.sh
 RUN chmod +x entrypoint-internal.sh
-
-RUN wget -O /usr/local/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v1.2.5/dumb-init_1.2.5_x86_64
-RUN chmod +x /usr/local/bin/dumb-init
 
 ENTRYPOINT ["/usr/local/bin/dumb-init", "--"]
 CMD ["/wlands/entrypoint.sh"]
