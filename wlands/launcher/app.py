@@ -181,12 +181,12 @@ async def get_launcher_latest_update(os: UpdateOs):
     return [version.to_json()] if version else []
 
 
-@app.get("/updates/latest/repo/{os}")
-async def get_launcher_latest_update_redirect(os: UpdateOs):
+@app.get("/updates/latest/repo/{os}/{path:path}")
+async def get_launcher_latest_update_redirect(os: UpdateOs, path: str):
     update = await LauncherUpdate.filter(public=True, os=os).last()
 
     if update is not None:
-        url = f"{S3_ENDPOINT_PUBLIC}/{S3_FILES_BUCKET}/updates/{update.dir_id}"
+        url = f"{S3_ENDPOINT_PUBLIC}/{S3_FILES_BUCKET}/updates/{update.dir_id}/{path}"
     else:
         url = "http://unreachable.local"
 
