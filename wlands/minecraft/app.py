@@ -1,3 +1,4 @@
+from asyncio import sleep
 from base64 import b64decode
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
@@ -5,7 +6,7 @@ from uuid import UUID
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
-from fastapi import FastAPI, Depends, Response
+from fastapi import FastAPI, Depends, Response, Body
 
 from .dependencies import mc_user_auth, mc_user_auth_data
 from .schemas import JoinRequestData, ReportRequest
@@ -136,6 +137,8 @@ async def player_report_post(data: ReportRequest, user: User = Depends(mc_user_a
         indexes: dict[str, int] = {}
 
         for idx, message in enumerate(data.report.evidence.messages):
+            await sleep(0)
+
             key = f"{message.profile_id}-{message.session_id}"
             if key in indexes and (indexes[key] + 1) != message.index:
                 raise BadRequestException(
@@ -222,3 +225,8 @@ async def yggdrasil_keys():
         "profilePropertyKeys": [{"publicKey": YGGDRASIL_PUBLIC_STR}],
         "playerCertificateKeys": [{"publicKey": YGGDRASIL_PUBLIC_STR}],
     }
+
+
+@app.post("/services/events", status_code=204)
+async def collect_telemetry():
+    ...
