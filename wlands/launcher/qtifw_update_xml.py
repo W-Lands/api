@@ -19,7 +19,7 @@ class PackageUpdate(BaseXmlModel):
     version: str = element(tag="Version")
     release_date: str = element(tag="ReleaseDate")
     forced_installation: bool = element(tag="ForcedInstallation")
-    default: bool = element(tag="Default")
+    default: bool = element(tag="Default", default=False)
     update_file: UpdateFile = element(tag="UpdateFile")
     downloadable_archives: str = element(tag="DownloadableArchives")
     sha1: str = element(tag="SHA1")
