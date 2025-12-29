@@ -1,3 +1,4 @@
+import json
 import os
 from asyncio import sleep
 from datetime import datetime, timezone
@@ -1448,7 +1449,7 @@ async def create_update(
             updates_index.seek(0, os.SEEK_END)
             size += updates_index.tell()
             if updates_index.tell() > 1024 * 32:
-                raise HTTPException(status_code=404, detail="Updates.xml size exceeds 32kb, i aint parsing all of that")
+                raise HTTPException(status_code=400, detail="Updates.xml size exceeds 32kb, i aint parsing all of that")
 
             updates_index.seek(0)
             updates_xml = updates_index.read()
@@ -1457,7 +1458,7 @@ async def create_update(
 
         updates = Updates.from_xml(updates_xml)
         if not updates.checksum or not updates.package_updates or not updates.sha1 or not updates.metadata_name:
-            raise HTTPException(status_code=404, detail="Invalid Updates.xml: required `something` is missing")
+            raise HTTPException(status_code=400, detail="Invalid Updates.xml: required `something` is missing")
 
         await sleep(0)
 
@@ -1468,7 +1469,7 @@ async def create_update(
                 checksum.update(data)
 
             if checksum.hexdigest() != updates.sha1:
-                raise HTTPException(status_code=404, detail="Root metadata checksum mismatch")
+                raise HTTPException(status_code=400, detail="Root metadata checksum mismatch")
 
             size += metadata_fp.tell()
 
@@ -1483,7 +1484,7 @@ async def create_update(
                     checksum.update(data)
 
                 if checksum.hexdigest() != update.sha1:
-                    raise HTTPException(status_code=404, detail="Update metadata checksum mismatch")
+                    raise HTTPException(status_code=400, detail="Update metadata checksum mismatch")
 
                 size += metadata_fp.tell()
 
@@ -1500,7 +1501,7 @@ async def create_update(
                     content_size += 40
 
                     if len(content_sha) != 40:
-                        raise HTTPException(status_code=404, detail=f"Update \"{archive}\" checksum invalid")
+                        raise HTTPException(status_code=400, detail=f"Update \"{archive}\" checksum invalid")
 
                     content_sha_fp.seek(0)
                     await S3.upload_object(
@@ -1515,7 +1516,7 @@ async def create_update(
                         checksum.update(data)
 
                     if checksum.hexdigest() != content_sha:
-                        raise HTTPException(status_code=404, detail=f"Update \"{archive}\" checksum mismatch")
+                        raise HTTPException(status_code=400, detail=f"Update \"{archive}\" checksum mismatch")
 
                     content_fp.seek(0)
                     await S3.upload_object(
@@ -1523,7 +1524,7 @@ async def create_update(
                     )
 
             if content_size != update.update_file.compressed_size:
-                raise HTTPException(status_code=404, detail=f"Update size mismatch")
+                raise HTTPException(status_code=400, detail=f"Update size mismatch")
 
             size += content_size
 
@@ -1544,6 +1545,38 @@ async def create_update(
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
 
 
+@app_post_fastui("/api/admin/launcher-updates-auto/")
+@app_post_fastui("/api/admin/launcher-updates-auto")
+async def create_update_auto(
+        admin: User = Depends(admin_auth),
+        changelog: str = Form(), file: UploadFile = FormFile(accept=".zip", max_size=1024 * 1024 * 256),
+):
+    with ZipFile(file.file, "r") as zf:
+        await sleep(0)
+
+        try:
+            with zf.open("ifw_repo_metadata.json", "r") as repo_metadata_file:
+                repo_metadata = repo_metadata_file.read()
+        except KeyError:
+            raise HTTPException(status_code=400, detail="ifw_repo_metadata.xml is not present in archive")
+
+    repo_metadata = json.loads(repo_metadata)
+    for field in ("os", "version_code", "version"):
+        if field not in repo_metadata:
+            raise HTTPException(status_code=400, detail=f"invalid metadata file: \"{field}\" is missing")
+
+    os_value = repo_metadata["os"]
+    if os_value not in UpdateOs._value2member_map_:
+        raise HTTPException(status_code=400, detail=f"invalid metadata file: \"os\" value is invalid")
+
+    os_type = UpdateOs(os_value)
+    code = repo_metadata["version_code"]
+    name = repo_metadata["version"]
+
+    return await create_update(admin, code, name, changelog, os_type, file)
+
+
+
 @app_get_fastui("/api/admin/launcher-updates/", dependencies=[Depends(admin_auth)])
 @app_get_fastui("/api/admin/launcher-updates", dependencies=[Depends(admin_auth)])
 async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
@@ -1558,6 +1591,7 @@ async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
         "Updates",
 
         c.Button(text="Create update", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
+        c.Button(text="Create update (auto)", on_click=PageEvent(name="create-modal-auto"), class_name="+ mb-2 mt-2 mx-2"),
         c.Table(
             data=updates,
             data_model=LauncherUpdatePydantic,
@@ -1626,6 +1660,41 @@ async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
             ],
             open_trigger=PageEvent(name="create-modal"),
         ),
+
+        c.Modal(
+            title="Create update (auto)",
+            body=[
+                c.Form(
+                    form_fields=[
+                        f.FormFieldTextarea(
+                            name="changelog",
+                            title="Changelog",
+                            required=True,
+                        ),
+                        c.FormFieldFile(
+                            name="file",
+                            title="Zipped update repository (with metadata)",
+                            accept=".zip",
+                            multiple=False,
+                            required=True,
+                        ),
+                    ],
+                    loading=[c.Spinner(text="Creating update...")],
+                    submit_url=f"{PREFIX_API}/admin/launcher-updates-auto",
+                    submit_trigger=PageEvent(name="create-form-auto-submit"),
+                    footer=[],
+                ),
+            ],
+            footer=[
+                c.Button(
+                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal-auto", clear=True)
+                ),
+                c.Button(
+                    text="Create", on_click=PageEvent(name="create-form-auto-submit"), class_name="+ ms-2",
+                ),
+            ],
+            open_trigger=PageEvent(name="create-modal-auto"),
+        ),
     )
 
 
@@ -1633,14 +1702,15 @@ async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
 @app_post_fastui("/api/admin/launcher-updates/{update_id}", dependencies=[Depends(admin_auth)])
 async def edit_launcher_update(
         update_id: int,
-        changelog: str = Form(), public: bool = Form(default=False),
+        name: str = Form(), changelog: str = Form(), public: bool = Form(default=False),
 ):
     if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
         raise HTTPException(status_code=404, detail="Update not found")
 
+    update.name = name
     update.changelog = changelog
     update.public = public
-    await update.save(update_fields=["changelog", "public"])
+    await update.save(update_fields=["name", "changelog", "public"])
 
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
 
@@ -1676,6 +1746,12 @@ async def launcher_update_info(update_id: int) -> list[AnyComponent]:
             body=[
                 c.Form(
                     form_fields=[
+                        c.FormFieldInput(
+                            name="name",
+                            title="Name",
+                            initial=update.name,
+                            required=True,
+                        ),
                         f.FormFieldTextarea(
                             name="changelog",
                             title="Changelog",
