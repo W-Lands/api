@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, UTC
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import Header
+from fastapi import Header, Depends, Cookie
 
 from ..models import UserSession, User
 
@@ -26,7 +27,7 @@ async def authorize_admin(token: str) -> User:
         "token": session_token,
         "user__banned": False,
         "user__admin": True,
-        "expires_at__gt": datetime.utcnow(),
+        "expires_at__gt": datetime.now(UTC),
     }
     if (session := await UserSession.get_or_none(**query).select_related("user")) is None:
         raise NotAuthorized
@@ -42,4 +43,22 @@ async def admin_opt_auth(authorization: str = Header(default="")) -> User | None
     try:
         return await authorize_admin(authorization)
     except NotAuthorized:
-        return
+        return None
+
+
+async def admin_auth_new(auth_token: str = Cookie(default="")) -> User:
+    return await authorize_admin(auth_token)
+
+
+async def admin_opt_auth_new(auth_token: str = Cookie(default="")) -> User | None:
+    try:
+        return await authorize_admin(auth_token)
+    except NotAuthorized:
+        return None
+
+
+AdminAuthMaybe = Annotated[User | None, Depends(admin_opt_auth)]
+AdminAuthNewDep = Depends(admin_auth_new)
+AdminAuthMaybeNewDep = Depends(admin_opt_auth_new)
+AdminAuthNew = Annotated[User | None, AdminAuthNewDep]
+AdminAuthMaybeNew = Annotated[User | None, AdminAuthMaybeNewDep]

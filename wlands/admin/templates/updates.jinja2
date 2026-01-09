@@ -1,0 +1,36 @@
+{% extends "layout.jinja2" %}
+
+{% block title %}Updates{% endblock %}
+{% block nav_updates %}active{% endblock %}
+
+{% block content %}
+    <h1>Updates</h1>
+    <button class="btn btn-primary mb-2 mt-2">[TODO] Create update</button>
+    <button class="btn btn-primary mb-2 mt-2 mx-2">[TODO] Create update (auto)</button>
+    <table class="table table-striped table-bordered">
+        <thead>
+        <tr>
+            <th>Id</th>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Created At</th>
+            <th>Size</th>
+            <th>Os</th>
+            <th>Public</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for update in updates %}
+            <tr>
+                <td>{{ update.id }}</td>
+                <td>{{ update.code }}</td>
+                <td><a href="/admin/admin-new/launcher-updates/{{ update.id }}/">{{ update.name }}</a></td>
+                <td>{{ update.created_at }}</td>
+                <td>{{ update.size|format_size }}</td>
+                <td>{{ update.os|format_enum }}</td>
+                <td>{{ update.public|format_bool }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

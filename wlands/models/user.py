@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from base64 import b64encode
+from datetime import datetime
 from time import time
 from uuid import uuid4, UUID
 
@@ -22,6 +23,7 @@ class User(Model):
     mfa_key: str | None = fields.CharField(null=True, default=None, max_length=64)
     banned: bool = fields.BooleanField(default=False)
     admin: bool = fields.BooleanField(default=False)
+    created_at: datetime = fields.DatetimeField(auto_now_add=True)
 
     @property
     def skin_url(self) -> str | None:

@@ -1,0 +1,35 @@
+{% extends "layout.jinja2" %}
+
+{% block title %}Announcements{% endblock %}
+{% block nav_ann %}active{% endblock %}
+
+{% block content %}
+    <h1>Announcements</h1>
+    <button class="btn btn-primary mb-2 mt-2">[TODO] Create announcement</button>
+    <table class="table table-striped table-bordered">
+        <thead>
+        <tr>
+            <th>Id</th>
+            <th>Name</th>
+            <th>Created At</th>
+            <th>Active From</th>
+            <th>Active To</th>
+            <th>Os</th>
+            <th>Onetime</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for ann in announcements %}
+            <tr>
+                <td>{{ ann.id }}</td>
+                <td><a href="/admin/admin-new/launcher-announcements/{{ ann.id }}">{{ ann.name }}</a></td>
+                <td>{{ ann.created_at }}</td>
+                <td>{{ ann.active_from }}</td>
+                <td>{{ ann.active_to }}</td>
+                <td>{{ ann.os|format_enum }}</td>
+                <td>{{ ann.onetime|format_bool }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

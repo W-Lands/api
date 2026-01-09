@@ -4,6 +4,7 @@ from asyncio import sleep
 from datetime import datetime, timezone
 from functools import partial
 from hashlib import sha1
+from pathlib import Path
 from time import time
 from typing import Self, Literal
 from uuid import UUID, uuid4
@@ -16,12 +17,17 @@ from fastui.components import forms as f
 from fastui.components.display import DisplayLookup
 from fastui.events import GoToEvent, AuthEvent, PageEvent
 from fastui.forms import fastui_form, FormFile, SelectOption
+from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, EmailStr, Field, SecretStr
 from pytz import UTC
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.templating import Jinja2Templates
 from tortoise.expressions import Q
 
-from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth
+from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
+    AdminAuthNew, AdminAuthNewDep
+from wlands.admin.forms import LoginForm
+from wlands.admin.jinja_filters import format_size, format_enum, format_bool
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.launcher.qtifw_update_xml import Updates
@@ -31,51 +37,216 @@ from wlands.models import User, UserSession, UserPydantic, GameSession, ProfileP
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
+
 app = FastAPI()
+templates_env = Environment(
+    loader=FileSystemLoader(Path(__file__).parent / "templates"),
+    autoescape=True,
+)
+templates = Jinja2Templates(env=templates_env)
+templates_env.filters["format_size"] = format_size
+templates_env.filters["format_enum"] = format_enum
+templates_env.filters["format_bool"] = format_bool
+
 app_get_fastui = partial(app.get, response_model=FastUI, response_model_exclude_none=True)
 app_post_fastui = partial(app.post, response_model=FastUI, response_model_exclude_none=True)
 
 
-class LoginForm(BaseModel):
-    email: EmailStr = Field(title='Email Address', json_schema_extra={'autocomplete': 'email'})
-    password: SecretStr = Field(title='Password', json_schema_extra={'autocomplete': 'password'})
+class ProfileRootDir(BaseModel):
+    type: str
+    name: str
+    db_type: ProfileFileLoc
 
 
-@app_get_fastui("/api/admin/login/")
-@app_get_fastui("/api/admin/login")
-def admin_login(user: User | None = Depends(admin_opt_auth)) -> list[AnyComponent]:
+class ProfileFileF(BaseModel):
+    name: str
+    id: int | None = None
+    created_at: datetime | None = None
+    sha1: str | None = None
+    size: int | None = None
+    url: str | None = None
+
+
+profile_root_dirs: dict[str, ProfileRootDir] = {
+    "game_dir": ProfileRootDir(
+        type="game_dir",
+        name="<Game Directory>",
+        db_type=ProfileFileLoc.GAME,
+    ),
+    "profile_dir": ProfileRootDir(
+        type="profile_dir",
+        name="<Profile Directory>",
+        db_type=ProfileFileLoc.PROFILE,
+    ),
+}
+
+
+@app.get("/admin-new/login", response_class=HTMLResponse)
+def admin_login_page(user: AdminAuthMaybeNew, request: Request):
     if user is not None:
-        return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/users"))]
+        return RedirectResponse(f"/admin/admin-new/users")
 
-    return [
-        c.Page(
-            components=[
-                c.Heading(text='Login', level=3),
-                c.ModelForm(model=LoginForm, submit_url=f"{PREFIX_API}/admin/login", display_mode='page'),
-            ]
-        )
-    ]
+    return templates.TemplateResponse(request=request, name="login.jinja2")
 
 
-@app_post_fastui("/api/admin/login/")
-@app_post_fastui("/api/admin/login")
-async def admin_login_post(form: LoginForm = fastui_form(LoginForm)) -> list[AnyComponent]:
+@app.post("/admin-new/login", response_class=HTMLResponse)
+async def admin_login(user: AdminAuthMaybeNew, request: Request, form: LoginForm = Form()):
+    if user is not None:
+        return RedirectResponse(f"/admin/admin-new/users")
+
+    error_resp = templates.TemplateResponse(request=request, name="login.jinja2", context={
+        "error": "Wrong credentials."
+    })
+
     if (user := await User.get_or_none(email=form.email, admin=True, banned=False)) is None:
-        raise HTTPException(status_code=400, detail="Wrong credentials.")
-
+        return error_resp
     if not checkpw(form.password.get_secret_value().encode(), user.password.encode()):
-        raise HTTPException(status_code=400, detail="Wrong credentials.")
+        return error_resp
 
     session = await UserSession.create(user=user)
 
-    return [
-        c.FireEvent(
-            event=AuthEvent(
-                token=f"{user.id.hex}{session.id.hex}{session.token}",
-                url=f"{PREFIX}/users"
-            )
-        )
+    resp = RedirectResponse(f"/admin/admin-new/users")
+    resp.set_cookie("auth_token", f"{user.id.hex}{session.id.hex}{session.token}")
+    return resp
+
+
+@app.get("/admin-new/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_users_page(request: Request, page: int = 1):
+    PAGE_SIZE = 25
+
+    users = await User.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("created_at")
+    return templates.TemplateResponse(request=request, name="users.jinja2", context={
+        "users": users,
+    })
+
+
+@app.get("/admin-new/users/{user_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_user_info_page(request: Request, user_id: UUID):
+    target = await User.get_or_none(id=user_id)
+    return templates.TemplateResponse(request=request, name="user.jinja2", context={
+        "user": target,
+    })
+
+
+@app.get("/admin-new/profiles", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_profiles_page(request: Request, page: int = 1):
+    PAGE_SIZE = 25
+
+    profiles = await GameProfile.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
+    return templates.TemplateResponse(request=request, name="profiles.jinja2", context={
+        "profiles": profiles,
+    })
+
+
+async def _get_profile_files(profile: GameProfile, root: ProfileRootDir, prefix: str) -> list[ProfileFileF]:
+    files = await ProfileFile.filter(
+        profile=profile, location=root.db_type, parent__startswith=prefix,
+    ).order_by("-created_at")
+
+    vdirs = {}
+    vfiles = []
+    seen_files = set()
+
+    for file in files:
+        file_path = file.name[len(prefix):].lstrip("/")
+        if file_path in seen_files:
+            continue
+
+        seen_files.add(file_path)
+        if file.action is ProfileFileAction.DELETE:
+            continue
+
+        paths = file_path.split("/")
+        if len(paths) > 1:
+            vdir = vdirs.get(paths[0])
+            if vdir is None:
+                name = f"{paths[0]}/"
+                vdirs[paths[0]] = vdir = ProfileFileF(name=name, size=0)
+
+            vdir.size += file.size
+            continue
+
+        vfiles.append(ProfileFileF(
+            name=file.name,
+            id=file.id,
+            modified_at=file.created_at,
+            sha1=file.sha1,
+            size=file.size,
+            url=file.url,
+        ))
+
+    vfiles = [
+        *sorted(list(vdirs.values()), key=lambda e: e.name),
+        *sorted(vfiles, key=lambda e: e.name),
     ]
+
+    if prefix:
+        vfiles.insert(0, ProfileFileF(name=".."))
+
+    return vfiles
+
+
+@app.get("/admin-new/profiles/{profile_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_profile_info_page(
+        request: Request, profile_id: int, dir_type: str | None = None, dir_prefix: str = ".",
+):
+    profile = await GameProfile.get_or_none(id=profile_id)
+
+    if dir_type not in profile_root_dirs:
+        hide_addresses = False
+        addresses = await ProfileServerAddress.filter(profile=profile)
+        current_root = None
+        files = []
+    else:
+        hide_addresses = True
+        addresses = None
+        current_root = profile_root_dirs[dir_type]
+
+        dir_prefix = dir_prefix.strip()
+        dir_prefix = os.path.relpath(os.path.normpath(os.path.join("/", dir_prefix)), "/")
+        if dir_prefix == ".":
+            dir_prefix = ""
+
+        files = await _get_profile_files(profile, current_root, dir_prefix)
+
+
+    return templates.TemplateResponse(request=request, name="profile.jinja2", context={
+        "profile": profile,
+        "addresses": addresses,
+        "hide_addresses": hide_addresses,
+        "root_dirs": list(profile_root_dirs.values()),
+        "current_root": current_root,
+        "files": files,
+        "dir_prefix": dir_prefix,
+    })
+
+
+@app.get("/admin-new/launcher-updates", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_updates_page(request: Request, page: int = 1):
+    PAGE_SIZE = 25
+
+    updates = await LauncherUpdate.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
+    return templates.TemplateResponse(request=request, name="updates.jinja2", context={
+        "updates": updates,
+    })
+
+
+@app.get("/admin-new/launcher-announcements", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_announcements_page(request: Request, page: int = 1):
+    PAGE_SIZE = 25
+
+    announcements = await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
+    return templates.TemplateResponse(request=request, name="announcements.jinja2", context={
+        "announcements": announcements,
+    })
+
+
+@app.get("/admin-new/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_authlib_page(request: Request):
+    agent = await AuthlibAgent.filter().order_by("-id").first()
+    return templates.TemplateResponse(request=request, name="authlib.jinja2", context={
+        "agent": agent,
+    })
 
 
 class ActionMode(c.Div):
@@ -136,68 +307,6 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
     ]
 
 
-@app_get_fastui("/api/admin/users/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/users", dependencies=[Depends(admin_auth)])
-async def users_table(page: int = 1) -> list[AnyComponent]:
-    PAGE_SIZE = 25
-
-    users = [
-        await UserPydantic.from_tortoise_orm(user)
-        for user in await User.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
-    ]
-
-    return make_page(
-        "Users",
-
-        c.Button(text="Create user", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
-        c.Table(
-            data=users,
-            data_model=UserPydantic,
-            columns=[
-                DisplayLookup(field="id", on_click=GoToEvent(url=f"{PREFIX}/users/{{id}}/")),
-                DisplayLookup(field="email"),
-                DisplayLookup(field="nickname"),
-                DisplayLookup(field="banned"),
-            ],
-        ),
-        c.Pagination(page=page, page_size=PAGE_SIZE, total=await User.filter().count()),
-
-        c.Modal(
-            title="Create user",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            name="nickname",
-                            title="Nickname",
-                            required=True,
-                        ),
-                        c.FormFieldInput(
-                            name="password",
-                            title="Password",
-                            html_type="password",
-                            required=True,
-                        ),
-                    ],
-                    loading=[c.Spinner(text="Creating user...")],
-                    submit_url=f"{PREFIX_API}/admin/users",
-                    submit_trigger=PageEvent(name="create-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
-                ),
-                c.Button(
-                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="create-modal"),
-        ),
-    )
-
-
 @app_post_fastui("/api/admin/users/", dependencies=[Depends(admin_auth)])
 @app_post_fastui("/api/admin/users", dependencies=[Depends(admin_auth)])
 async def create_user(nickname: str = Form(), password: str = Form()):
@@ -247,163 +356,6 @@ async def edit_user(user_id: UUID, nickname: str = Form(), admin: User = Depends
     await user.save(update_fields=["nickname", "email"])
 
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/users/{user_id}?{time()}"))]
-
-
-@app_get_fastui("/api/admin/users/{user_id}/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/users/{user_id}", dependencies=[Depends(admin_auth)])
-async def user_info(user_id: UUID) -> list[AnyComponent]:
-    if (user := await User.get_or_none(id=user_id)) is None:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    ban_unban = "Unban" if user.banned else "Ban"
-
-    user = await UserPydantic.from_tortoise_orm(user)
-    return make_page(
-        user.nickname,
-
-        c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/users")),
-        c.Details(data=user, fields=[
-            DisplayLookup(field="id"),
-            DisplayLookup(field="email"),
-            DisplayLookup(field="nickname"),
-            DisplayLookup(field="signed_for_beta"),
-            DisplayLookup(field="banned"),
-            DisplayLookup(field="admin"),
-            DisplayLookup(field="has_mfa"),
-        ]),
-        c.Div(components=[
-            c.Button(
-                text=ban_unban, named_style="warning", on_click=PageEvent(name="ban-modal")
-            ),
-            c.Button(
-                text="Edit", on_click=PageEvent(name="edit-modal"), class_name="+ ms-2",
-            ),
-        ]),
-        c.Modal(
-            title="Edit user",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            name="nickname",
-                            title="Nickname",
-                            initial=user.nickname,
-                            required=True,
-                        ),
-                    ],
-                    loading=[c.Spinner(text="Editing...")],
-                    submit_url=f"{PREFIX_API}/admin/users/{user.id}",
-                    submit_trigger=PageEvent(name="edit-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
-                ),
-                c.Button(
-                    text="Submit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="edit-modal"),
-        ),
-        c.Modal(
-            title=f"{ban_unban} user?",
-            body=[
-                c.Paragraph(text="Are you sure you want to ban this user?"),
-                c.Form(
-                    form_fields=[],
-                    loading=[c.Spinner(text="...")],
-                    submit_url=f"{PREFIX_API}/admin/users/{user.id}/{ban_unban}",
-                    submit_trigger=PageEvent(name="ban-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="ban-form", clear=True)
-                ),
-                c.Button(
-                    text=ban_unban, on_click=PageEvent(name="ban-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="ban-modal"),
-        ),
-    )
-
-
-@app_get_fastui("/api/admin/profiles/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/profiles", dependencies=[Depends(admin_auth)])
-async def profiles_table(page: int = 1) -> list[AnyComponent]:
-    PAGE_SIZE = 25
-
-    profiles = [
-        await ProfilePydantic.from_tortoise_orm(profile)
-        for profile in await GameProfile.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
-    ]
-
-    return make_page(
-        "Profiles",
-
-        c.Button(text="Create profile", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
-        c.Table(
-            data=profiles,
-            data_model=ProfilePydantic,
-            columns=[
-                DisplayLookup(field="id"),
-                DisplayLookup(field="name", on_click=GoToEvent(url=f"{PREFIX}/profiles/{{id}}/")),
-                DisplayLookup(field="created_at"),
-                DisplayLookup(field="updated_at"),
-                DisplayLookup(field="public"),
-            ],
-        ),
-        c.Pagination(page=page, page_size=PAGE_SIZE, total=await GameProfile.filter().count()),
-
-        c.Modal(
-            title="Create profile",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            name="name",
-                            title="Name",
-                            required=True,
-                        ),
-                        f.FormFieldTextarea(
-                            name="description",
-                            title="Description",
-                            required=True,
-                        ),
-                        c.FormFieldFile(
-                            name="manifest",
-                            title="Manifest",
-                            accept=".json",
-                            multiple=False,
-                            required=True,
-                        ),
-                        f.FormFieldBoolean(
-                            name="public",
-                            title="Public",
-                            initial=False,
-                        ),
-                    ],
-                    loading=[c.Spinner(text="Creating profile...")],
-                    submit_url=f"{PREFIX_API}/admin/profiles",
-                    submit_trigger=PageEvent(name="create-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
-                ),
-                c.Button(
-                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="create-modal"),
-        ),
-    )
 
 
 @app_post_fastui("/api/admin/profiles/")
@@ -457,12 +409,6 @@ async def edit_profile_manifest(
     await profile.save(update_fields=["version_manifest", "updated_at"])
 
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
-
-
-class ProfileTabLink(BaseModel):
-    type: str
-    name: str
-    db_type: ProfileFileLoc
 
 
 @app_post_fastui("/api/admin/profiles/{profile_id}/files/", dependencies=[Depends(admin_auth)])
@@ -701,16 +647,6 @@ async def revert_profile_files(
     ]
 
 
-def format_size(size: int) -> str:
-    if size > 1024 * 1024 * 1024:
-        return f"{size / 1024 / 1024 / 1024:.2f} GB"
-    elif size > 1024 * 1024:
-        return f"{size / 1024 / 1024:.2f} MB"
-    elif size > 1024:
-        return f"{size / 1024:.2f} KB"
-    return f"{size} B"
-
-
 class ProfileFileV(BaseModel):
     id: int
     created_at_fmt: str
@@ -773,12 +709,6 @@ class ProfileFileV(BaseModel):
             action_rename_url=f"{action_prefix}&mode=rename",
             action_delete_url=f"{action_prefix}&mode=delete",
         )
-
-
-profile_dirs: dict[str, ProfileTabLink] = {
-    "game_dir": ProfileTabLink(type="game_dir", name="<Game Directory>", db_type=ProfileFileLoc.GAME),
-    "profile_dir": ProfileTabLink(type="profile_dir", name="<Profile Directory>", db_type=ProfileFileLoc.PROFILE),
-}
 
 
 def HiddenInput(*, name: str, value: str | int, required: bool = True) -> c.FormFieldInput:
@@ -1576,128 +1506,6 @@ async def create_update_auto(
     return await create_update(admin, code, name, changelog, os_type, file)
 
 
-
-@app_get_fastui("/api/admin/launcher-updates/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/launcher-updates", dependencies=[Depends(admin_auth)])
-async def launcher_updates_table(page: int = 1) -> list[AnyComponent]:
-    PAGE_SIZE = 25
-
-    updates = [
-        await LauncherUpdatePydantic.from_tortoise_orm(update)
-        for update in await LauncherUpdate.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
-    ]
-
-    return make_page(
-        "Updates",
-
-        c.Button(text="Create update", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
-        c.Button(text="Create update (auto)", on_click=PageEvent(name="create-modal-auto"), class_name="+ mb-2 mt-2 mx-2"),
-        c.Table(
-            data=updates,
-            data_model=LauncherUpdatePydantic,
-            columns=[
-                DisplayLookup(field="id"),
-                DisplayLookup(field="code"),
-                DisplayLookup(field="name", on_click=GoToEvent(url=f"{PREFIX}/launcher-updates/{{id}}/")),
-                DisplayLookup(field="created_at"),
-                DisplayLookup(field="size"),
-                DisplayLookup(field="public"),
-            ],
-        ),
-        c.Pagination(page=page, page_size=PAGE_SIZE, total=await LauncherUpdate.filter().count()),
-
-        c.Modal(
-            title="Create update",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            name="code",
-                            title="Code",
-                            html_type="number",
-                            required=True,
-                        ),
-                        c.FormFieldInput(
-                            name="name",
-                            title="Name",
-                            required=True,
-                        ),
-                        f.FormFieldTextarea(
-                            name="changelog",
-                            title="Changelog",
-                            required=True,
-                        ),
-                        f.FormFieldSelect(
-                            name="os_type",
-                            title="Os",
-                            options=[
-                                SelectOption(value=str(UpdateOs.WINDOWS.value), label="Windows"),
-                                SelectOption(value=str(UpdateOs.LINUX.value), label="Linux"),
-                            ],
-                            required=True,
-                        ),
-                        c.FormFieldFile(
-                            name="file",
-                            title="Zipped update repository",
-                            accept=".zip",
-                            multiple=False,
-                            required=True,
-                        ),
-                    ],
-                    loading=[c.Spinner(text="Creating update...")],
-                    submit_url=f"{PREFIX_API}/admin/launcher-updates",
-                    submit_trigger=PageEvent(name="create-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
-                ),
-                c.Button(
-                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="create-modal"),
-        ),
-
-        c.Modal(
-            title="Create update (auto)",
-            body=[
-                c.Form(
-                    form_fields=[
-                        f.FormFieldTextarea(
-                            name="changelog",
-                            title="Changelog",
-                            required=True,
-                        ),
-                        c.FormFieldFile(
-                            name="file",
-                            title="Zipped update repository (with metadata)",
-                            accept=".zip",
-                            multiple=False,
-                            required=True,
-                        ),
-                    ],
-                    loading=[c.Spinner(text="Creating update...")],
-                    submit_url=f"{PREFIX_API}/admin/launcher-updates-auto",
-                    submit_trigger=PageEvent(name="create-form-auto-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal-auto", clear=True)
-                ),
-                c.Button(
-                    text="Create", on_click=PageEvent(name="create-form-auto-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="create-modal-auto"),
-        ),
-    )
-
-
 @app_post_fastui("/api/admin/launcher-updates/{update_id}/", dependencies=[Depends(admin_auth)])
 @app_post_fastui("/api/admin/launcher-updates/{update_id}", dependencies=[Depends(admin_auth)])
 async def edit_launcher_update(
@@ -1805,97 +1613,6 @@ async def create_announcement(
     )
 
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-announcements/{announcement.id}?{time()}"))]
-
-
-@app_get_fastui("/api/admin/launcher-announcements/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/launcher-announcements", dependencies=[Depends(admin_auth)])
-async def launcher_announcements_table(page: int = 1) -> list[AnyComponent]:
-    PAGE_SIZE = 25
-
-    announcements = [
-        await LauncherAnnouncementPydantic.from_tortoise_orm(ann)
-        for ann in await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
-    ]
-
-    return make_page(
-        "Announcements",
-
-        c.Button(text="Create announcement", on_click=PageEvent(name="create-modal"), class_name="+ mb-2 mt-2"),
-        c.Table(
-            data=announcements,
-            data_model=LauncherAnnouncementPydantic,
-            columns=[
-                DisplayLookup(field="id"),
-                DisplayLookup(field="name", on_click=GoToEvent(url=f"{PREFIX}/launcher-announcements/{{id}}/")),
-                DisplayLookup(field="created_at"),
-                DisplayLookup(field="active_from"),
-                DisplayLookup(field="active_to"),
-                DisplayLookup(field="onetime"),
-            ],
-        ),
-        c.Pagination(page=page, page_size=PAGE_SIZE, total=await LauncherAnnouncement.filter().count()),
-
-        c.Modal(
-            title="Create announcement",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            name="name",
-                            title="Name",
-                            required=True,
-                        ),
-                        c.FormFieldInput(
-                            name="active_from",
-                            title="Active from",
-                            html_type="datetime-local",
-                            required=True,
-                        ),
-                        c.FormFieldInput(
-                            name="active_to",
-                            title="Active to",
-                            html_type="datetime-local",
-                            required=True,
-                        ),
-                        f.FormFieldSelect(
-                            name="os_type",
-                            title="Os",
-                            options=[
-                                SelectOption(value=str(AnnouncementOs.ALL.value), label="All"),
-                                SelectOption(value=str(AnnouncementOs.WINDOWS.value), label="Windows"),
-                                SelectOption(value=str(AnnouncementOs.LINUX.value), label="Linux"),
-                            ],
-                            required=True,
-                        ),
-                        f.FormFieldTextarea(
-                            name="text",
-                            title="Text",
-                            required=True,
-                        ),
-                        c.FormFieldBoolean(
-                            name="onetime",
-                            title="Onetime",
-                            required=False,
-                            initial=True,
-                        ),
-                    ],
-                    loading=[c.Spinner(text="Creating announcement...")],
-                    submit_url=f"{PREFIX_API}/admin/launcher-announcements",
-                    submit_trigger=PageEvent(name="create-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="create-modal", clear=True)
-                ),
-                c.Button(
-                    text="Create", on_click=PageEvent(name="create-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="create-modal"),
-        ),
-    )
 
 
 @app_post_fastui("/api/admin/launcher-announcements/{announcement_id}/", dependencies=[Depends(admin_auth)])
@@ -2028,84 +1745,6 @@ async def create_authlib_agent(
     )
 
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/authlib-agent/?{time()}"))]
-
-
-@app_get_fastui("/api/admin/authlib-agent/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/authlib-agent", dependencies=[Depends(admin_auth)])
-async def authlib_agent_info() -> list[AnyComponent]:
-    agent = await AuthlibAgent.filter().order_by("-id").first()
-    agent_pydantic = await AuthlibAgentPydantic.from_tortoise_orm(agent) if agent is not None else None
-
-    download_button = ()
-    if agent is not None:
-        download_button = (
-            c.Button(
-                text="Download current", on_click=GoToEvent(url=agent.url()), class_name="+ ms-2",
-            ),
-        )
-
-    details = c.Heading(text="No authlib agent", level=3)
-    if agent is not None:
-        details = c.Details(
-            data=agent_pydantic,
-            fields=[
-                DisplayLookup(field="id"),
-                DisplayLookup(field="created_at"),
-                DisplayLookup(field="size"),
-                DisplayLookup(field="sha1"),
-                DisplayLookup(field="min_launcher_version"),
-            ],
-        )
-
-    return make_page(
-        "Authlib Agent",
-
-
-        details,
-        c.Div(components=[
-            c.Button(
-                text="Upload new", on_click=PageEvent(name="upload-modal"),
-            ),
-            *download_button,
-        ]),
-
-        c.Modal(
-            title="Upload/edit authlib agent",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            html_type="number",
-                            name="min_launcher_version",
-                            title="Minimum launcher version",
-                            required=True,
-                            initial=str(agent.min_launcher_version) if agent is not None else "",
-                        ),
-                        c.FormFieldFile(
-                            name="file",
-                            title="Agent JAR file",
-                            required=agent is None,
-                            multiple=False,
-                            accept=".jar",
-                        ),
-                    ],
-                    loading=[c.Spinner(text="Creating announcement...")],
-                    submit_url=f"{PREFIX_API}/admin/authlib-agent",
-                    submit_trigger=PageEvent(name="upload-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="upload-modal", clear=True)
-                ),
-                c.Button(
-                    text="Create", on_click=PageEvent(name="upload-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="upload-modal"),
-        ),
-    )
 
 
 @app.get("/{path:path}")

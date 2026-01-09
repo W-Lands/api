@@ -21,6 +21,7 @@ aerich = "^0.9.1"
 python-multipart = "^0.0.20"
 fastui = "^0.7.0"
 pydantic-xml = "^2.17.3"
+jinja2 = "^3.1.6"
 
 
 [build-system]

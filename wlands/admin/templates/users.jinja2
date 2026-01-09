@@ -1,0 +1,29 @@
+{% extends "layout.jinja2" %}
+
+{% block title %}Users{% endblock %}
+{% block nav_users %}active{% endblock %}
+
+{% block content %}
+    <h1>Users</h1>
+    <button class="btn btn-primary mb-2 mt-2">[TODO] Create user</button>
+    <table class="table table-striped table-bordered">
+        <thead>
+        <tr>
+            <th>Id</th>
+            <th>Email</th>
+            <th>Nickname</th>
+            <th>Banned</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for user in users %}
+            <tr>
+                <td><a href="/admin/admin-new/users/{{ user.id }}">{{ user.id }}</a></td>
+                <td>{{ user.email }}</td>
+                <td>{{ user.nickname }}</td>
+                <td>{{ user.banned|format_bool }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "layout.jinja2" %}
+{% import "macros.jinja2" as macros %}
+
+{% block title %}User {{ user.nickname }}{% endblock %}
+{% block nav_users %}active{% endblock %}
+
+{% block content %}
+    <h1>{{ user.nickname }}</h1>
+    <a href="/admin/admin-new/users" class="">&lt;- Back</a>
+    <dl class="row">
+        {{ macros.details_row("Id", user.id) }}
+        {{ macros.details_row("Email", user.email) }}
+        {{ macros.details_row("Nickname", user.nickname) }}
+        {{ macros.details_row("Banned", user.banned|format_bool) }}
+        {{ macros.details_row("Admin", user.admin|format_bool) }}
+        {{ macros.details_row("Has Mfa", user.mfa_key|format_bool) }}
+    </dl>
+    <div class="">
+        <button class="btn btn-warning">[TODO] Ban/Unban</button>
+        <button class="btn btn-primary ms-2">[TODO] Edit</button>
+    </div>
+{% endblock %}

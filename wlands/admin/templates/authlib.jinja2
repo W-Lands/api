@@ -1,0 +1,28 @@
+{% extends "layout.jinja2" %}
+{% import "macros.jinja2" as macros %}
+
+{% block title %}Authlib Agent{% endblock %}
+{% block nav_authlib %}active{% endblock %}
+
+{% block content %}
+    <h1>Authlib Agent</h1>
+    {% if agent %}
+        <dl class="row">
+            {{ macros.details_row("Id", agent.id) }}
+            {{ macros.details_row("Created At", agent.created_at) }}
+            {{ macros.details_row("Size", agent.created_at) }}
+            {{ macros.details_row("Created At", agent.size|format_size) }}
+            {{ macros.details_row("Sha1", agent.sha1) }}
+            {{ macros.details_row("Min Launcher Version", agent.min_launcher_version) }}
+        </dl>
+    {% else %}
+        <h3>No authlib agent</h3>
+    {% endif %}
+
+    <div>
+        <button class="btn btn-primary">[TODO] Upload new</button>
+        {% if agent %}
+            <a class="btn btn-primary ms-2" href="{{ agent.url() }}">[TODO] Download current</a>
+        {% endif %}
+    </div>
+{% endblock %}
