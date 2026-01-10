@@ -5,6 +5,39 @@
 {% block nav_profiles %}active{% endblock %}
 
 {% block content %}
+    {% if unapplied %}
+        <div class="border-bottom mb-4 pb-3">
+            <h4>This profile has approximately {{ unapplied|length }} unapplied files (private changes)</h4>
+            <a href="#unapplied-changes" data-bs-toggle="collapse">Show changes</a>
+            <div id="unapplied-changes" class="collapse">
+                <ul>
+                    {% for change in unapplied %}
+                        <li>
+                            <strong>{{ "<"|e }}{{ change.root }}{{ ">"|e }}</strong>/
+                            <code>{{ change.path }}</code> -
+                            {% if change.created %}
+                                new
+                            {% elif change.deleted %}
+                                deleted (or renamed)
+                            {% else %}
+                                unknown
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <h5>Do you want to apply them now?</h5>
+            <div class="modal-footer">
+                <form class="d-inline" action="{{ profile.id }}/apply-files" method="POST">
+                    <button class="btn btn-primary btn-warning">Apply</button>
+                </form>
+                <form class="d-inline" action="{{ profile.id }}/revert-files" method="POST">
+                    <button class="btn btn-primary ms-2 btn-danger">Revert</button>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+
     <h1>{{ profile.name }}</h1>
     <a href="/admin/admin-new/profiles">&lt;- Back</a>
     <dl class="row">
