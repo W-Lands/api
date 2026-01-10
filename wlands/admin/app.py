@@ -25,9 +25,9 @@ from starlette.templating import Jinja2Templates
 from tortoise.expressions import Q
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
-    AdminAuthNew, AdminAuthNewDep
+    AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm
-from wlands.admin.jinja_filters import format_size, format_enum, format_bool
+from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.launcher.qtifw_update_xml import Updates
@@ -47,6 +47,7 @@ templates = Jinja2Templates(env=templates_env)
 templates_env.filters["format_size"] = format_size
 templates_env.filters["format_enum"] = format_enum
 templates_env.filters["format_bool"] = format_bool
+templates_env.filters["format_datetime"] = format_datetime
 
 app_get_fastui = partial(app.get, response_model=FastUI, response_model_exclude_none=True)
 app_post_fastui = partial(app.post, response_model=FastUI, response_model_exclude_none=True)
@@ -65,6 +66,7 @@ class ProfileFileF(BaseModel):
     sha1: str | None = None
     size: int | None = None
     url: str | None = None
+    fake: bool = False
 
 
 profile_root_dirs: dict[str, ProfileRootDir] = {
@@ -89,6 +91,16 @@ def admin_login_page(user: AdminAuthMaybeNew, request: Request):
     return templates.TemplateResponse(request=request, name="login.jinja2")
 
 
+@app.get("/admin-new/logout")
+async def admin_logout_page(session: AdminAuthSessionMaybe):
+    if session is not None:
+        await session.delete()
+
+    resp = RedirectResponse(f"/admin/admin-new/login", 303)
+    resp.delete_cookie("auth_token")
+    return resp
+
+
 @app.post("/admin-new/login", response_class=HTMLResponse)
 async def admin_login(user: AdminAuthMaybeNew, request: Request, form: LoginForm = Form()):
     if user is not None:
@@ -105,8 +117,10 @@ async def admin_login(user: AdminAuthMaybeNew, request: Request, form: LoginForm
 
     session = await UserSession.create(user=user)
 
-    resp = RedirectResponse(f"/admin/admin-new/users")
-    resp.set_cookie("auth_token", f"{user.id.hex}{session.id.hex}{session.token}")
+    resp = RedirectResponse(f"/admin/admin-new/users", 303)
+    resp.set_cookie(
+        "auth_token", f"{user.id.hex}{session.id.hex}{session.token}", expires=int(session.expires_at.timestamp())
+    )
     return resp
 
 
@@ -169,7 +183,7 @@ async def _get_profile_files(profile: GameProfile, root: ProfileRootDir, prefix:
         vfiles.append(ProfileFileF(
             name=file.name,
             id=file.id,
-            modified_at=file.created_at,
+            created_at=file.created_at,
             sha1=file.sha1,
             size=file.size,
             url=file.url,
@@ -181,7 +195,7 @@ async def _get_profile_files(profile: GameProfile, root: ProfileRootDir, prefix:
     ]
 
     if prefix:
-        vfiles.insert(0, ProfileFileF(name=".."))
+        vfiles.insert(0, ProfileFileF(name="..", fake=True))
 
     return vfiles
 
@@ -231,6 +245,15 @@ async def admin_updates_page(request: Request, page: int = 1):
     })
 
 
+@app.get("/admin-new/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_update_info_page(request: Request, update_id: int):
+    update = await LauncherUpdate.get_or_none(id=update_id)
+
+    return templates.TemplateResponse(request=request, name="update.jinja2", context={
+        "update": update,
+    })
+
+
 @app.get("/admin-new/launcher-announcements", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_announcements_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
@@ -238,6 +261,15 @@ async def admin_announcements_page(request: Request, page: int = 1):
     announcements = await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
     return templates.TemplateResponse(request=request, name="announcements.jinja2", context={
         "announcements": announcements,
+    })
+
+
+@app.get("/admin-new/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_update_info_page(request: Request, ann_id: int):
+    ann = await LauncherAnnouncement.get_or_none(id=ann_id)
+
+    return templates.TemplateResponse(request=request, name="announcement.jinja2", context={
+        "announcement": ann,
     })
 
 
@@ -1523,75 +1555,6 @@ async def edit_launcher_update(
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
 
 
-@app_get_fastui("/api/admin/launcher-updates/{update_id}/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/launcher-updates/{update_id}", dependencies=[Depends(admin_auth)])
-async def launcher_update_info(update_id: int) -> list[AnyComponent]:
-    if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
-        raise HTTPException(status_code=404, detail="Update not found")
-
-    update_pd = await LauncherUpdatePydantic.from_tortoise_orm(update)
-    return make_page(
-        update.name,
-
-        c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/launcher-updates")),
-        c.Details(data=update_pd, fields=[
-            DisplayLookup(field="id"),
-            DisplayLookup(field="code"),
-            DisplayLookup(field="created_at"),
-            c.Display(title="Size", value=format_size(update.size)),
-            DisplayLookup(field="public"),
-            c.Display(title="Os", value=update.os.name.lower().title()),
-            DisplayLookup(field="changelog"),
-            DisplayLookup(field="dir_id"),
-        ]),
-        c.Div(components=[
-            c.Button(
-                text="Edit", on_click=PageEvent(name="edit-modal"), class_name="+ ms-2",
-            ),
-        ]),
-        c.Modal(
-            title="Edit update",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            name="name",
-                            title="Name",
-                            initial=update.name,
-                            required=True,
-                        ),
-                        f.FormFieldTextarea(
-                            name="changelog",
-                            title="Changelog",
-                            initial=update.changelog,
-                            required=True,
-                        ),
-                        c.FormFieldBoolean(
-                            name="public",
-                            title="Public",
-                            initial=update.public,
-                            required=False,
-                        )
-                    ],
-                    loading=[c.Spinner(text="Editing...")],
-                    submit_url=f"{PREFIX_API}/admin/launcher-updates/{update.id}",
-                    submit_trigger=PageEvent(name="edit-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
-                ),
-                c.Button(
-                    text="Edit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="edit-modal"),
-        ),
-    )
-
-
 @app_post_fastui("/api/admin/launcher-announcements/")
 @app_post_fastui("/api/admin/launcher-announcements")
 async def create_announcement(
@@ -1637,82 +1600,6 @@ async def edit_launcher_announcement(
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-announcements/{announcement.id}?{time()}"))]
 
 
-@app_get_fastui("/api/admin/launcher-announcements/{announcement_id}/", dependencies=[Depends(admin_auth)])
-@app_get_fastui("/api/admin/launcher-announcements/{announcement_id}", dependencies=[Depends(admin_auth)])
-async def launcher_announcement_info(announcement_id: int) -> list[AnyComponent]:
-    if (announcement := await LauncherAnnouncement.get_or_none(id=announcement_id)) is None:
-        raise HTTPException(status_code=404, detail="Announcement not found")
-
-    announcement_pd = await LauncherAnnouncementPydantic.from_tortoise_orm(announcement)
-    return make_page(
-        announcement.name,
-
-        c.Link(components=[c.Text(text="<- Back")], on_click=GoToEvent(url=f"{PREFIX}/launcher-announcements")),
-        c.Details(data=announcement_pd, fields=[
-            DisplayLookup(field="id"),
-            DisplayLookup(field="created_at"),
-            DisplayLookup(field="active_from"),
-            DisplayLookup(field="active_to"),
-            c.Display(title="Os", value=announcement.os.name.lower().title()),
-            DisplayLookup(field="onetime"),
-            DisplayLookup(field="text"),
-        ]),
-        c.Div(components=[
-            c.Button(
-                text="Edit", on_click=PageEvent(name="edit-modal"), class_name="+ ms-2",
-            ),
-        ]),
-        c.Modal(
-            title="Edit announcement",
-            body=[
-                c.Form(
-                    form_fields=[
-                        c.FormFieldInput(
-                            name="active_from",
-                            title="Active from",
-                            html_type="datetime-local",
-                            required=True,
-                            initial=announcement.active_from.strftime("%Y-%m-%dT%H:%M"),
-                        ),
-                        c.FormFieldInput(
-                            name="active_to",
-                            title="Active to",
-                            html_type="datetime-local",
-                            required=True,
-                            initial=announcement.active_to.strftime("%Y-%m-%dT%H:%M"),
-                        ),
-                        f.FormFieldTextarea(
-                            name="text",
-                            title="Text",
-                            initial=announcement.text,
-                            required=True,
-                        ),
-                        c.FormFieldBoolean(
-                            name="onetime",
-                            title="Onetime",
-                            initial=announcement.onetime,
-                            required=False,
-                        )
-                    ],
-                    loading=[c.Spinner(text="Editing...")],
-                    submit_url=f"{PREFIX_API}/admin/launcher-announcements/{announcement.id}",
-                    submit_trigger=PageEvent(name="edit-form-submit"),
-                    footer=[],
-                ),
-            ],
-            footer=[
-                c.Button(
-                    text="Cancel", named_style="secondary", on_click=PageEvent(name="edit-form", clear=True)
-                ),
-                c.Button(
-                    text="Edit", on_click=PageEvent(name="edit-form-submit"), class_name="+ ms-2",
-                ),
-            ],
-            open_trigger=PageEvent(name="edit-modal"),
-        ),
-    )
-
-
 @app_post_fastui("/api/admin/authlib-agent/")
 @app_post_fastui("/api/admin/authlib-agent")
 async def create_authlib_agent(
@@ -1753,5 +1640,7 @@ async def html_landing() -> HTMLResponse:
 
 
 @app.exception_handler(NotAuthorized)
-async def custom_exception_handler(request: Request, exc: ...):
-    return JSONResponse([c.FireEvent(event=GoToEvent(url=f"{PREFIX}/login")).model_dump()])
+async def not_authorized_handler(request: Request, exc: NotAuthorized):
+    resp = RedirectResponse(f"/admin/admin-new/login")
+    resp.delete_cookie("auth_token")
+    return resp

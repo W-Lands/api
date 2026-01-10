@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 
@@ -17,3 +18,7 @@ def format_enum(value: Enum) -> str:
 
 def format_bool(value: bool) -> str:
     return "✓" if value else "×"
+
+
+def format_datetime(value: datetime) -> str:
+    return value.strftime("%d.%m.%Y %H:%M:%S")

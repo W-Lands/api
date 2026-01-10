@@ -1,0 +1,22 @@
+{% extends "layout.jinja2" %}
+{% import "macros.jinja2" as macros %}
+
+{% block title %}Update {{ update.name }}{% endblock %}
+{% block nav_updates %}active{% endblock %}
+
+{% block content %}
+    <h1>{{ update.name }}</h1>
+    <a href="/admin/admin-new/launcher-updates">&lt;- Back</a>
+    <dl class="row">
+        {{ macros.details_row("Id", update.id) }}
+        {{ macros.details_row("Code", update.code) }}
+        {{ macros.details_row("Created At", update.created_at|format_datetime) }}
+        {{ macros.details_row("size", update.size|format_size) }}
+        {{ macros.details_row("Public", update.public|format_bool) }}
+        {{ macros.details_row("Os", update.os|format_enum) }}
+        {{ macros.details_row("Changelog", update.changelog) }}
+        {{ macros.details_row("Directory Id", update.dir_id) }}
+    </dl>
+
+    <button class="btn btn-warning">[TODO] Edit</button>
+{% endblock %}

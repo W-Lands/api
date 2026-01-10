@@ -9,9 +9,8 @@
     {% if agent %}
         <dl class="row">
             {{ macros.details_row("Id", agent.id) }}
-            {{ macros.details_row("Created At", agent.created_at) }}
-            {{ macros.details_row("Size", agent.created_at) }}
-            {{ macros.details_row("Created At", agent.size|format_size) }}
+            {{ macros.details_row("Created At", agent.created_at|format_datetime) }}
+            {{ macros.details_row("Size", agent.size|format_size) }}
             {{ macros.details_row("Sha1", agent.sha1) }}
             {{ macros.details_row("Min Launcher Version", agent.min_launcher_version) }}
         </dl>

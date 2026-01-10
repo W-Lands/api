@@ -6,13 +6,13 @@
 
 {% block content %}
     <h1>{{ profile.name }}</h1>
-    <a href="/admin/admin-new/profiles" class="">&lt;- Back</a>
+    <a href="/admin/admin-new/profiles">&lt;- Back</a>
     <dl class="row">
         {{ macros.details_row("Id", profile.id) }}
         {{ macros.details_row("Name", profile.name) }}
         {{ macros.details_row("Description", profile.description) }}
-        {{ macros.details_row("Created At", profile.created_at) }}
-        {{ macros.details_row("Updated At", profile.updated_at) }}
+        {{ macros.details_row("Created At", profile.created_at|format_datetime) }}
+        {{ macros.details_row("Updated At", profile.updated_at|format_datetime) }}
         {{ macros.details_row("Public", profile.public|format_bool) }}
     </dl>
 
@@ -65,12 +65,18 @@
                             <a href="{{ file.url }}">{{ file.name }}</a>
                         {% endif %}
                     </td>
-                    <td>{% if file.modified_at is not none %}{{ file.modified_at }}{% endif %}</td>
-                    <td>{% if file.sha1 is not none %}{{ file.sha1 }}{% endif %}</td>
+                    <td>{% if file.created_at is not none %}{{ file.created_at|format_datetime }}{% endif %}</td>
+                    <td>
+                        {% if file.sha1 is not none %}
+                            <a href="#" data-bs-toggle="popover" data-bs-title="Sha1" data-bs-placement="bottom" data-bs-content="{{ file.sha1 }}">{{ file.sha1[:8] }}</a>
+                        {% endif %}
+                    </td>
                     <td>{% if file.size is not none %}{{ file.size|format_size }}{% endif %}</td>
                     <td>
-                        <button class="btn btn-primary">[TODO] Rename</button>
-                        <button class="btn btn-danger">[TODO] Delete</button>
+                        {% if not file.fake %}
+                            <button class="btn btn-primary">[TODO] Rename</button>
+                            <button class="btn btn-danger">[TODO] Delete</button>
+                        {% endif %}
                     </td>
                 </tr>
             {% endfor %}
@@ -108,4 +114,9 @@
             </table>
         {% endif %}
     {% endif %}
+
+    <script>
+        const popoverTriggerList = document.querySelectorAll('[data-bs-toggle="popover"]');
+        const popoverList = [...popoverTriggerList].map(popoverTriggerEl => new bootstrap.Popover(popoverTriggerEl));
+    </script>
 {% endblock %}

@@ -24,8 +24,8 @@
             <tr>
                 <td>{{ update.id }}</td>
                 <td>{{ update.code }}</td>
-                <td><a href="/admin/admin-new/launcher-updates/{{ update.id }}/">{{ update.name }}</a></td>
-                <td>{{ update.created_at }}</td>
+                <td><a href="/admin/admin-new/launcher-updates/{{ update.id }}">{{ update.name }}</a></td>
+                <td>{{ update.created_at|format_datetime }}</td>
                 <td>{{ update.size|format_size }}</td>
                 <td>{{ update.os|format_enum }}</td>
                 <td>{{ update.public|format_bool }}</td>
