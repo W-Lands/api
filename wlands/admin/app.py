@@ -163,6 +163,28 @@ async def admin_user_info_page(request: Request, user_id: UUID):
     })
 
 
+
+@app.post("/admin-new/users/{user_id}/toggle-ban", response_class=HTMLResponse)
+async def admin_ban_unban_user(request: Request, user_id: UUID, admin: AdminAuthNew):
+    if (target := await User.get_or_none(id=user_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/users", 303)
+    if target.id == admin.id or target.admin:
+        return templates.TemplateResponse(request=request, name="user.jinja2", context={
+            "user": target,
+            "ban_error": "You can't ban this user",
+        })
+
+    target.banned = not target.banned
+    if target.banned:
+        await GameSession.filter(user=target).delete()
+        await UserSession.filter(user=target).delete()
+
+    await target.save(update_fields=["banned"])
+
+    return RedirectResponse(f"/admin/admin-new/users/{target.id}", 303)
+
+
+
 @app.get("/admin-new/profiles", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_profiles_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
@@ -358,28 +380,6 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
             ],
         ),
     ]
-
-
-@app_post_fastui("/api/admin/users/{user_id}/{action}/")
-@app_post_fastui("/api/admin/users/{user_id}/{action}")
-async def ban_unban_user(user_id: UUID, action: str, admin: User = Depends(admin_auth)):
-    if user_id == admin.id:
-        raise HTTPException(status_code=400, detail="You can not ban this user")
-    if (user := await User.get_or_none(id=user_id)) is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user == admin or user.admin:
-        raise HTTPException(status_code=400, detail="You can not ban this user")
-
-    if action.lower() == "ban":
-        await GameSession.filter(user=user).delete()
-        await UserSession.filter(user=user).delete()
-        user.banned = True
-    else:
-        user.banned = False
-
-    await user.save(update_fields=["banned"])
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/users/{user_id}?{time()}"))]
 
 
 @app_post_fastui("/api/admin/users/{user_id}/")
