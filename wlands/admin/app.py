@@ -27,7 +27,7 @@ from tortoise.expressions import Q
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
-    ProfileAddressForm, UploadProfileFilesForm
+    ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -412,6 +412,97 @@ async def admin_upload_profile_files(profile_id: int, form: UploadProfileFilesFo
     )
 
 
+@app.post("/admin-new/profiles/{profile_id}/files/rename", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_rename_profile_files(profile_id: int, form: RenameProfileFileForm = Form()):
+    result_url = f"/admin/admin-new/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}"
+
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+    if form.dir_type not in profile_root_dirs:
+        return RedirectResponse(result_url, 303)
+
+    location = profile_root_dirs[form.dir_type].db_type
+    new_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{form.dir_prefix}/{form.new_name}")), "/")
+
+    files = []
+    files_to_create = []
+    seen_files = set()
+
+    if form.target_file:
+        file = await ProfileFile.get_or_none(profile=profile, location=location, id=int(form.target_file))
+        search_name = file.name
+        if file is not None:
+            files = [file]
+    elif form.target_dir:
+        parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{form.dir_prefix}/{form.target_dir}")), "/")
+        search_name = parent_name
+        files = await ProfileFile.filter(
+            profile=profile, location=location, parent__startswith=parent_name,
+        ).order_by("-created_at")
+    else:
+        return RedirectResponse(result_url, 303)
+
+    now = datetime.now(UTC)
+    for file in files:
+        if file.name in seen_files:
+            continue
+        seen_files.add(file.name)
+
+        file.profile = profile
+        if (cloned := file.clone_delete(now)) is not None:
+            files_to_create.append(cloned)
+        if (cloned := file.clone_rename(new_name + file.name[len(search_name):], now)) is not None:
+            files_to_create.append(cloned)
+
+    if files_to_create:
+        await ProfileFile.bulk_create(files_to_create)
+
+    return RedirectResponse(result_url, 303)
+
+
+@app.post("/admin-new/profiles/{profile_id}/files/delete", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_delete_profile_files(profile_id: int, form: DeleteProfileFileForm = Form()):
+    result_url = f"/admin/admin-new/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}"
+
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+    if form.dir_type not in profile_root_dirs:
+        return RedirectResponse(result_url, 303)
+
+    location = profile_root_dirs[form.dir_type].db_type
+
+    files = []
+    files_to_create = []
+    seen_files = set()
+
+    if form.target_file:
+        file = await ProfileFile.get_or_none(profile=profile, location=location, id=int(form.target_file))
+        if file is not None:
+            files = [file]
+    elif form.target_dir:
+        parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{form.dir_prefix}/{form.target_dir}")), "/")
+        files = await ProfileFile.filter(
+            profile=profile, location=location, parent__startswith=parent_name
+        ).order_by("-created_at")
+    else:
+        return RedirectResponse(result_url, 303)
+
+    now = datetime.now(UTC)
+    for file in files:
+        if file.name in seen_files:
+            continue
+        seen_files.add(file.name)
+
+        file.profile = profile
+        if (cloned := file.clone_delete(now)) is not None:
+            files_to_create.append(cloned)
+
+    if files_to_create:
+        await ProfileFile.bulk_create(files_to_create)
+
+    return RedirectResponse(result_url, 303)
+
+
 @app.get("/admin-new/launcher-updates", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_updates_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
@@ -513,106 +604,6 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
                 *components,
             ],
         ),
-    ]
-
-
-@app_post_fastui("/api/admin/profiles/{profile_id}/files/rename/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/profiles/{profile_id}/files/rename", dependencies=[Depends(admin_auth)])
-async def rename_profile_files(
-        profile_id: int, name: str = Form(),
-        file_loc: ProfileFileLoc = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
-        dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
-):
-    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    new_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{name}")), "/")
-    search_name = ".."
-
-    files = []
-    files_to_create = []
-    seen_files = set()
-
-    if target_type == "file":
-        file = await ProfileFile.get_or_none(
-            profile=profile, location=file_loc, id=int(target),
-        )
-        search_name = file.name
-        if file is not None:
-            files.append(file)
-    elif target_type == "dir":
-        parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
-        search_name = parent_name
-        files = await ProfileFile.filter(
-            profile=profile, location=file_loc, parent__startswith=parent_name
-        ).order_by("-created_at")
-
-    now = datetime.now(UTC)
-    for file in files:
-        if file.name in seen_files:
-            continue
-        seen_files.add(file.name)
-
-        file.profile = profile
-        if (cloned := file.clone_delete(now)) is not None:
-            files_to_create.append(cloned)
-        if (cloned := file.clone_rename(new_name + file.name[len(search_name):], now)) is not None:
-            files_to_create.append(cloned)
-
-    if files_to_create:
-        await ProfileFile.bulk_create(files_to_create)
-
-    return [
-        c.FireEvent(
-            event=GoToEvent(
-                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
-            )
-        )
-    ]
-
-
-@app_post_fastui("/api/admin/profiles/{profile_id}/files/delete/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/profiles/{profile_id}/files/delete", dependencies=[Depends(admin_auth)])
-async def delete_profile_files(
-        profile_id: int,
-        file_loc: ProfileFileLoc = Form(), target_type: Literal["file", "dir"] = Form(), target: str = Form(),
-        dir_type: str = Form(default=""), dir_prefix: str = Form(default=""),
-):
-    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    files = []
-    files_to_create = []
-    seen_files = set()
-
-    if target_type == "file":
-        file = await ProfileFile.get_or_none(profile=profile, location=file_loc, id=int(target))
-        if file is not None:
-            files.append(file)
-    elif target_type == "dir":
-        parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{dir_prefix}/{target}")), "/")
-        files = await ProfileFile.filter(profile=profile, location=file_loc, parent__startswith=parent_name)\
-            .order_by("-created_at")
-
-    now = datetime.now(UTC)
-    for file in files:
-        if file.name in seen_files:
-            continue
-        seen_files.add(file.name)
-
-        file.profile = profile
-        if (cloned := file.clone_delete(now)) is not None:
-            files_to_create.append(cloned)
-
-    if files_to_create:
-        await ProfileFile.bulk_create(files_to_create)
-
-    return [
-        c.FireEvent(
-            event=GoToEvent(
-                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
-            )
-        )
     ]
 
 

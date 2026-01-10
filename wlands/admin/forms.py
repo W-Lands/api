@@ -36,3 +36,18 @@ class UploadProfileFilesForm(BaseModel):
     dir_prefix: str
     parent: str
     files: list[UploadFile]
+
+
+class RenameProfileFileForm(BaseModel):
+    dir_type: str
+    dir_prefix: str
+    target_file: str
+    target_dir: str
+    new_name: str
+
+
+class DeleteProfileFileForm(BaseModel):
+    dir_type: str
+    dir_prefix: str
+    target_file: str
+    target_dir: str
