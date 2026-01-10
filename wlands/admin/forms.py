@@ -1,6 +1,5 @@
-from fastapi import UploadFile
-from fastui.forms import FormFile
-from pydantic import BaseModel, EmailStr, SecretStr
+from fastapi import UploadFile, File
+from pydantic import BaseModel, EmailStr, SecretStr, Field
 
 
 class LoginForm(BaseModel):
@@ -20,7 +19,7 @@ class ProfileInfoForm(BaseModel):
     
     
 class ProfileManifestForm(BaseModel):
-    manifest: UploadFile = FormFile(accept="application/json,.json", max_size=256 * 1024)
+    manifest: UploadFile = File()
 
 
 class ProfileCreateForm(ProfileInfoForm, ProfileManifestForm):
@@ -30,3 +29,10 @@ class ProfileCreateForm(ProfileInfoForm, ProfileManifestForm):
 class ProfileAddressForm(BaseModel):
     name: str
     address: str
+
+
+class UploadProfileFilesForm(BaseModel):
+    dir_type: str
+    dir_prefix: str
+    parent: str
+    files: list[UploadFile]

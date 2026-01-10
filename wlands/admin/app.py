@@ -27,7 +27,7 @@ from tortoise.expressions import Q
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
-    ProfileAddressForm
+    ProfileAddressForm, UploadProfileFilesForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -237,18 +237,18 @@ async def _get_profile_files(profile: GameProfile, root: ProfileRootDir, prefix:
         if file.action is ProfileFileAction.DELETE:
             continue
 
-        paths = file_path.split("/")
-        if len(paths) > 1:
-            vdir = vdirs.get(paths[0])
+        name, maybe_slash, _ = file_path.partition("/")
+        if maybe_slash:
+            vdir = vdirs.get(name)
             if vdir is None:
-                name = f"{paths[0]}/"
-                vdirs[paths[0]] = vdir = ProfileFileF(name=name, size=0)
+                name = f"{name}/"
+                vdirs[name] = vdir = ProfileFileF(name=name, size=0)
 
             vdir.size += file.size
             continue
 
         vfiles.append(ProfileFileF(
-            name=file.name,
+            name=name,
             id=file.id,
             created_at=file.created_at,
             sha1=file.sha1,
@@ -333,6 +333,8 @@ async def admin_edit_profile(profile_id: int, form: ProfileInfoForm = Form()):
 async def admin_edit_profile_manifest(profile_id: int, form: ProfileManifestForm = Form()):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         return RedirectResponse(f"/admin/admin-new/profiles", 303)
+    if form.manifest.size is None or form.manifest.size > 256 * 1024:
+        raise HTTPException(400, "Invalid manifest size!")
 
     manifest_model = VersionManifest.model_validate_json(await form.manifest.read())
     profile.version_manifest = manifest_model.model_dump()
@@ -361,6 +363,53 @@ async def admin_delete_profile_address(profile_id: int, address_id: int):
         await address.delete()
 
     return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+
+
+@app.post("/admin-new/profiles/{profile_id}/files", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_upload_profile_files(profile_id: int, form: UploadProfileFilesForm = Form()):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+    if form.dir_type not in profile_root_dirs:
+        return RedirectResponse(f"/admin/admin-new/profiles/{profile_id}", 303)
+
+    files_to_create = []
+
+    now = datetime.now(timezone.utc)
+    for file in form.files:
+        if file.size is None or file.size > 128 * 1024 * 1024:
+            raise HTTPException(400, "Invalid file size!")
+
+        await file.seek(0)
+        sha = sha1()
+        while data := await file.read(64 * 1024):
+            sha.update(data)
+        sha = sha.hexdigest().lower()
+
+        path = f"{form.dir_prefix}/{form.parent}/{file.filename}".replace("\\", "/")
+        name = os.path.relpath(os.path.normpath(os.path.join("/", path)), "/")
+
+        await file.seek(0)
+        file_id = uuid4().hex
+        await S3.upload_object(S3_FILES_BUCKET, f"files/{file_id}/{sha}", file.file)
+
+        files_to_create.append(ProfileFile(
+            name=name,
+            parent=os.path.dirname(name),
+            profile=profile,
+            created_at=now,
+            location=profile_root_dirs[form.dir_type].db_type,
+            action=ProfileFileAction.DOWNLOAD,
+            sha1=sha,
+            size=file.size,
+            file_id=file_id,
+        ))
+
+    if files_to_create:
+        await ProfileFile.bulk_create(files_to_create)
+
+    return RedirectResponse(
+        f"/admin/admin-new/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}", 303,
+    )
 
 
 @app.get("/admin-new/launcher-updates", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
@@ -464,57 +513,6 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
                 *components,
             ],
         ),
-    ]
-
-
-@app_post_fastui("/api/admin/profiles/{profile_id}/files/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/profiles/{profile_id}/files", dependencies=[Depends(admin_auth)])
-async def upload_profile_files(
-        profile_id: int,
-        directory: str | None = Form(default=None), file_loc: ProfileFileLoc = Form(), dir_type: str | None = Form(),
-        dir_prefix: str = Form(default=""),
-        files: list[UploadFile] = FormFile(max_size=128 * 1024 * 1024),
-):
-    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    files_to_create = []
-
-    now = datetime.now(timezone.utc)
-    for file in files:
-        file.file.seek(0)
-        sha = sha1()
-        sha.update(file.file.read())
-        sha = sha.hexdigest().lower()
-
-        path = f"{dir_prefix}/{directory}/{file.filename}".replace("\\", "/")
-        name = os.path.relpath(os.path.normpath(os.path.join("/", path)), "/")
-
-        file.file.seek(0)
-        file_id = uuid4().hex
-        await S3.upload_object(S3_FILES_BUCKET, f"files/{file_id}/{sha}", file.file)
-
-        files_to_create.append(ProfileFile(
-            name=name,
-            parent=os.path.dirname(name),
-            profile=profile,
-            created_at=now,
-            location=file_loc,
-            action=ProfileFileAction.DOWNLOAD,
-            sha1=sha,
-            size=file.size,
-            file_id=file_id,
-        ))
-
-    if files_to_create:
-        await ProfileFile.bulk_create(files_to_create)
-
-    return [
-        c.FireEvent(
-            event=GoToEvent(
-                url=f"{PREFIX}/profiles/{profile.id}?{time()}&dir_type={dir_type}&dir_prefix={dir_prefix}",
-            )
-        )
     ]
 
 
