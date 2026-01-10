@@ -1,6 +1,8 @@
 from fastapi import UploadFile, File
 from pydantic import BaseModel, EmailStr, SecretStr, Field
 
+from wlands.models import UpdateOs
+
 
 class LoginForm(BaseModel):
     email: EmailStr
@@ -51,3 +53,16 @@ class DeleteProfileFileForm(BaseModel):
     dir_prefix: str
     target_file: str
     target_dir: str
+
+
+class CreateUpdateForm(BaseModel):
+    code: int
+    name: str
+    changelog: str
+    os: UpdateOs
+    file: UploadFile
+
+
+class CreateUpdateAutoForm(BaseModel):
+    changelog: str
+    file: UploadFile

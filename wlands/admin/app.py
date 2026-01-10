@@ -27,7 +27,8 @@ from tortoise.expressions import Q
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
-    ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm
+    ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
+    CreateUpdateAutoForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -35,6 +36,10 @@ from wlands.launcher.qtifw_update_xml import Updates
 from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
     ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs, LauncherAnnouncement, \
     LauncherAnnouncementPydantic, AnnouncementOs, AuthlibAgent, AuthlibAgentPydantic, ProfileServerAddress
+
+
+# TODO: pagination in pages with tables
+# TODO: dont use "profile_dir" and "game_dir", use ProfileFileLoc
 
 PREFIX = "/admin"
 PREFIX_API = f"{PREFIX}/api"
@@ -565,189 +570,15 @@ async def admin_updates_page(request: Request, page: int = 1):
     })
 
 
-@app.get("/admin-new/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
-async def admin_update_info_page(request: Request, update_id: int):
-    update = await LauncherUpdate.get_or_none(id=update_id)
-
-    return templates.TemplateResponse(request=request, name="update.jinja2", context={
-        "update": update,
-    })
-
-
-@app.get("/admin-new/launcher-announcements", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
-async def admin_announcements_page(request: Request, page: int = 1):
-    PAGE_SIZE = 25
-
-    announcements = await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
-    return templates.TemplateResponse(request=request, name="announcements.jinja2", context={
-        "announcements": announcements,
-    })
-
-
-@app.get("/admin-new/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
-async def admin_update_info_page(request: Request, ann_id: int):
-    ann = await LauncherAnnouncement.get_or_none(id=ann_id)
-
-    return templates.TemplateResponse(request=request, name="announcement.jinja2", context={
-        "announcement": ann,
-    })
-
-
-@app.get("/admin-new/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
-async def admin_authlib_page(request: Request):
-    agent = await AuthlibAgent.filter().order_by("-id").first()
-    return templates.TemplateResponse(request=request, name="authlib.jinja2", context={
-        "agent": agent,
-    })
-
-
-class ActionMode(c.Div):
-    ...
-
-
-def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, *components: AnyComponent) -> list[AnyComponent]:
-    if not isinstance(action_mode, ActionMode):
-        if action_mode is not None:
-            components = [action_mode, *components]
-
-    return [
-        c.PageTitle(text=f"W-Lands - {title}"),
-        c.Navbar(
-            title="W-Lands",
-            title_event=GoToEvent(url=f"{PREFIX}/users"),
-            start_links=[
-                c.Link(
-                    components=[c.Text(text="Users")],
-                    on_click=GoToEvent(url=f"{PREFIX}/users"),
-                    active=f'startswith:{PREFIX}/users',
-                ),
-                c.Link(
-                    components=[c.Text(text="Profiles")],
-                    on_click=GoToEvent(url=f"{PREFIX}/profiles"),
-                    active=f'startswith:{PREFIX}/profiles',
-                ),
-                c.Link(
-                    components=[c.Text(text="Launcher Updates")],
-                    on_click=GoToEvent(url=f"{PREFIX}/launcher-updates"),
-                    active=f'startswith:{PREFIX}/launcher-updates',
-                ),
-                c.Link(
-                    components=[c.Text(text="Launcher Announcements")],
-                    on_click=GoToEvent(url=f"{PREFIX}/launcher-announcements"),
-                    active=f'startswith:{PREFIX}/launcher-announcements',
-                ),
-                c.Link(
-                    components=[c.Text(text="Authlib agent")],
-                    on_click=GoToEvent(url=f"{PREFIX}/authlib-agent"),
-                    active=f'startswith:{PREFIX}/authlib-agent',
-                ),
-            ],
-            end_links=[
-                c.Link(
-                    components=[c.Text(text="Logout")],
-                    on_click=AuthEvent(token=False, url=f"{PREFIX}/login")
-                ),
-            ],
-        ),
-        c.Page(
-            components=[
-                *([action_mode] if isinstance(action_mode, ActionMode) else ()),
-                c.Heading(text=title),
-                *components,
-            ],
-        ),
-    ]
-
-
-class ProfileFileV(BaseModel):
-    id: int
-    created_at_fmt: str
-    name: str
-    file_id: str
-    sha1: str
-    size: int
-
-    url: str
-    size_fmt: str
-
-    action_rename_url: str
-    action_delete_url: str
-
-    action_rename: str = "Rename"
-    action_delete: str = "Delete"
-
-    @classmethod
-    def from_db(
-            cls, file: ProfileFile | None, name: str, dir_type: str, dir_prefix: str,
-            profile_id: int | None = None,
-    ) -> Self:
-        if file is not None and profile_id is None:
-            profile_id = file.profile_id
-        profile_prefix = f"{PREFIX}/profiles/{profile_id}/"
-        ctx_prefix = f"?dir_type={dir_type}&dir_prefix={dir_prefix}"
-
-        if file is None:
-            action_prefix = f"{profile_prefix}{ctx_prefix}&target_type=dir&target={name}"
-            action_rename = "Rename" if name != ".." else ""
-            action_delete = "Delete" if name != ".." else ""
-            action_rename_url = f"{action_prefix}&mode=rename" if name != ".." else ""
-            action_delete_url = f"{action_prefix}&mode=delete" if name != ".." else ""
-
-            return cls(
-                id=-1,
-                created_at_fmt="",
-                name=name,
-                file_id="",
-                sha1="",
-                size=0,
-                url=f"{profile_prefix}?dir_type={dir_type}&dir_prefix={dir_prefix}/{name}",
-                size_fmt="",
-                action_rename=action_rename,
-                action_delete=action_delete,
-                action_rename_url=action_rename_url,
-                action_delete_url=action_delete_url,
-            )
-
-        action_prefix = f"{profile_prefix}{ctx_prefix}&target_type=file&target={file.id}"
-        return cls(
-            id=file.id,
-            created_at_fmt=file.created_at.strftime("%d.%m.%Y %H:%M:%S"),
-            name=name,
-            file_id=file.file_id,
-            sha1=file.sha1,
-            size=file.size,
-            url=file.url,
-            size_fmt=format_size(file.size),
-            action_rename_url=f"{action_prefix}&mode=rename",
-            action_delete_url=f"{action_prefix}&mode=delete",
-        )
-
-
-def HiddenInput(*, name: str, value: str | int, required: bool = True) -> c.FormFieldInput:
-    return c.FormFieldInput(
-        name=name,
-        initial=str(value),
-        html_type="hidden",
-        required=required,
-        class_name="d-none",
-        title="",
-    )
-
-
-@app_post_fastui("/api/admin/launcher-updates/")
-@app_post_fastui("/api/admin/launcher-updates")
-async def create_update(
-        admin: User = Depends(admin_auth),
-        code: int = Form(), name: str = Form(), changelog: str = Form(), os_type: UpdateOs = Form(),
-        file: UploadFile = FormFile(accept=".zip", max_size=1024 * 1024 * 256),
-):
+@app.post("/admin-new/launcher-updates", response_class=HTMLResponse)
+async def create_update(admin: AdminAuthNew, form: CreateUpdateForm = Form()):
     size = 0
     dir_id = uuid4()
-    file.file.seek(0)
+    await form.file.seek(0)
 
     s3_prefix = f"updates/{dir_id}"
 
-    with ZipFile(file.file, "r") as zf:
+    with ZipFile(form.file.file, "r") as zf:
         await sleep(0)
 
         with zf.open("Updates.xml", "r") as updates_index:
@@ -838,25 +669,21 @@ async def create_update(
 
     update = await LauncherUpdate.create(
         created_by=admin,
-        code=code,
-        name=name,
+        code=form.code,
+        name=form.name,
         size=size,
-        changelog=changelog,
+        changelog=form.changelog,
         public=False,
-        os=os_type,
+        os=form.os,
         dir_id=dir_id,
     )
 
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
+    return RedirectResponse(f"/admin/admin-new/launcher-updates/{update.id}", 303)
 
 
-@app_post_fastui("/api/admin/launcher-updates-auto/")
-@app_post_fastui("/api/admin/launcher-updates-auto")
-async def create_update_auto(
-        admin: User = Depends(admin_auth),
-        changelog: str = Form(), file: UploadFile = FormFile(accept=".zip", max_size=1024 * 1024 * 256),
-):
-    with ZipFile(file.file, "r") as zf:
+@app.post("/admin-new/launcher-updates-auto", response_class=HTMLResponse)
+async def create_update_auto(admin: AdminAuthNew, form: CreateUpdateAutoForm = Form()):
+    with ZipFile(form.file.file, "r") as zf:
         await sleep(0)
 
         try:
@@ -878,7 +705,43 @@ async def create_update_auto(
     code = repo_metadata["version_code"]
     name = repo_metadata["version"]
 
-    return await create_update(admin, code, name, changelog, os_type, file)
+    return await create_update(admin, code, name, form.changelog, os_type, form.file)
+
+
+@app.get("/admin-new/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_update_info_page(request: Request, update_id: int):
+    update = await LauncherUpdate.get_or_none(id=update_id)
+
+    return templates.TemplateResponse(request=request, name="update.jinja2", context={
+        "update": update,
+    })
+
+
+@app.get("/admin-new/launcher-announcements", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_announcements_page(request: Request, page: int = 1):
+    PAGE_SIZE = 25
+
+    announcements = await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
+    return templates.TemplateResponse(request=request, name="announcements.jinja2", context={
+        "announcements": announcements,
+    })
+
+
+@app.get("/admin-new/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_update_info_page(request: Request, ann_id: int):
+    ann = await LauncherAnnouncement.get_or_none(id=ann_id)
+
+    return templates.TemplateResponse(request=request, name="announcement.jinja2", context={
+        "announcement": ann,
+    })
+
+
+@app.get("/admin-new/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_authlib_page(request: Request):
+    agent = await AuthlibAgent.filter().order_by("-id").first()
+    return templates.TemplateResponse(request=request, name="authlib.jinja2", context={
+        "agent": agent,
+    })
 
 
 @app_post_fastui("/api/admin/launcher-updates/{update_id}/", dependencies=[Depends(admin_auth)])
