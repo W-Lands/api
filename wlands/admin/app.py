@@ -26,7 +26,7 @@ from tortoise.expressions import Q
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
-from wlands.admin.forms import LoginForm
+from wlands.admin.forms import LoginForm, UserCreateForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -124,14 +124,35 @@ async def admin_login(user: AdminAuthMaybeNew, request: Request, form: LoginForm
     return resp
 
 
-@app.get("/admin-new/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
-async def admin_users_page(request: Request, page: int = 1):
+async def _users_page(request: Request, page: int, create_error: str | None = None, create_nickname: str = ""):
     PAGE_SIZE = 25
 
     users = await User.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("created_at")
     return templates.TemplateResponse(request=request, name="users.jinja2", context={
         "users": users,
+        "error": create_error,
+        "show_create_modal": bool(create_error),
+        "create_form_nickname": create_nickname,
     })
+
+
+@app.get("/admin-new/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_users_page(request: Request, page: int = 1):
+    return await _users_page(request, page)
+
+
+@app.post("/admin-new/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_create_user(request: Request, form: UserCreateForm = Form()):
+    if await User.filter(nickname=form.nickname).exists():
+        return await _users_page(request, 1, "User with this nickname already exists.", form.nickname)
+
+    new_user = await User.create(
+        email=f"{form.nickname}@wlands.pepega",
+        nickname=form.nickname,
+        password=hashpw(form.password.get_secret_value().encode("utf8"), gensalt()).decode("utf8"),
+    )
+
+    return RedirectResponse(f"/admin/admin-new/users/{new_user.id}", 303)
 
 
 @app.get("/admin-new/users/{user_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
@@ -337,18 +358,6 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
             ],
         ),
     ]
-
-
-@app_post_fastui("/api/admin/users/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/users", dependencies=[Depends(admin_auth)])
-async def create_user(nickname: str = Form(), password: str = Form()):
-    user = await User.create(
-        email=f"{nickname}@wlands.pepega",
-        nickname=nickname,
-        password=hashpw(password.encode("utf8"), gensalt()).decode("utf8"),
-    )
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/users/{user.id}?{time()}"))]
 
 
 @app_post_fastui("/api/admin/users/{user_id}/{action}/")
