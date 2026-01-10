@@ -163,7 +163,6 @@ async def admin_user_info_page(request: Request, user_id: UUID):
     })
 
 
-
 @app.post("/admin-new/users/{user_id}/toggle-ban", response_class=HTMLResponse)
 async def admin_ban_unban_user(request: Request, user_id: UUID, admin: AdminAuthNew):
     if (target := await User.get_or_none(id=user_id)) is None:
@@ -183,6 +182,30 @@ async def admin_ban_unban_user(request: Request, user_id: UUID, admin: AdminAuth
 
     return RedirectResponse(f"/admin/admin-new/users/{target.id}", 303)
 
+
+@app.post("/admin-new/users/{user_id}", response_class=HTMLResponse)
+async def admin_edit_user(request: Request, user_id: UUID, admin: AdminAuthNew, nickname: str = Form()):
+    if (target := await User.get_or_none(id=user_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/users", 303)
+    if target.id == admin.id or target.admin:
+        return templates.TemplateResponse(request=request, name="user.jinja2", context={
+            "user": target,
+            "edit_error": "You can't edit this user",
+            "edit_form_nickname": nickname,
+        })
+
+    if await User.filter(nickname=nickname).exists():
+        return templates.TemplateResponse(request=request, name="user.jinja2", context={
+            "user": target,
+            "edit_error": "User with this nickname already exists.",
+            "edit_form_nickname": nickname,
+        })
+
+    target.nickname = nickname
+    target.email = f"{nickname}@wlands.pepega"
+    await target.save(update_fields=["nickname", "email"])
+
+    return RedirectResponse(f"/admin/admin-new/users/{target.id}", 303)
 
 
 @app.get("/admin-new/profiles", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
@@ -380,23 +403,6 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
             ],
         ),
     ]
-
-
-@app_post_fastui("/api/admin/users/{user_id}/")
-@app_post_fastui("/api/admin/users/{user_id}")
-async def edit_user(user_id: UUID, nickname: str = Form(), admin: User = Depends(admin_auth)):
-    if user_id == admin.id:
-        raise HTTPException(status_code=400, detail="You can not edit this user")
-    if (user := await User.get_or_none(id=user_id)) is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user == admin or user.admin:
-        raise HTTPException(status_code=400, detail="You can not edit this user")
-
-    user.nickname = nickname
-    user.email = f"{nickname}@wlands.pepega"
-    await user.save(update_fields=["nickname", "email"])
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/users/{user_id}?{time()}"))]
 
 
 @app_post_fastui("/api/admin/profiles/")
