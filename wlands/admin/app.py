@@ -26,7 +26,7 @@ from tortoise.expressions import Q
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
-from wlands.admin.forms import LoginForm, UserCreateForm
+from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -301,6 +301,46 @@ async def admin_profile_info_page(
     })
 
 
+@app.post("/admin-new/profiles", response_class=HTMLResponse)
+async def admin_create_profile(admin: AdminAuthNew, form: ProfileCreateForm = Form()):
+    manifest_model = VersionManifest.model_validate_json(await form.manifest.read())
+    profile = await GameProfile.create(
+        name=form.name,
+        description=form.description,
+        creator=admin,
+        version_manifest=manifest_model.model_dump(),
+        public=form.public,
+    )
+
+    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+
+
+@app.post("/admin-new/profiles/{profile_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_edit_profile(profile_id: int, form: ProfileInfoForm = Form()):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+
+    profile.name = form.name
+    profile.description = form.description
+    profile.public = form.public
+    await profile.save(update_fields=["name", "description", "public"])
+
+    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+
+
+@app.post("/admin-new/profiles/{profile_id}/manifest", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_edit_profile_manifest(profile_id: int, form: ProfileManifestForm = Form()):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+
+    manifest_model = VersionManifest.model_validate_json(await form.manifest.read())
+    profile.version_manifest = manifest_model.model_dump()
+    profile.updated_at = datetime.now(UTC)
+    await profile.save(update_fields=["version_manifest", "updated_at"])
+
+    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+
+
 @app.get("/admin-new/launcher-updates", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_updates_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
@@ -403,59 +443,6 @@ def make_page(title: str, action_mode: ActionMode | AnyComponent | None = None, 
             ],
         ),
     ]
-
-
-@app_post_fastui("/api/admin/profiles/")
-@app_post_fastui("/api/admin/profiles")
-async def create_profile(
-        admin: User = Depends(admin_auth),
-        name: str = Form(), description: str = Form(), public: bool = Form(default=False),
-        manifest: UploadFile = FormFile(accept="application/json,.json", max_size=256 * 1024),
-):
-    manifest_model = VersionManifest.model_validate_json(await manifest.read())
-    profile = await GameProfile.create(
-        name=name,
-        description=description,
-        creator=admin,
-        version_manifest=manifest_model.model_dump(),
-        public=public,
-    )
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
-
-
-@app_post_fastui("/api/admin/profiles/{profile_id}/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/profiles/{profile_id}", dependencies=[Depends(admin_auth)])
-async def edit_profile(
-        profile_id: int,
-        name: str = Form(), description: str = Form(), public: bool = Form(default=False),
-):
-    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    profile.name = name
-    profile.description = description
-    profile.public = public
-    await profile.save(update_fields=["name", "description", "public"])
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
-
-
-@app_post_fastui("/api/admin/profiles/{profile_id}/manifest/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/profiles/{profile_id}/manifest", dependencies=[Depends(admin_auth)])
-async def edit_profile_manifest(
-        profile_id: int,
-        manifest: UploadFile = FormFile(accept="application/json,.json", max_size=256 * 1024),
-):
-    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    manifest_model = VersionManifest.model_validate_json(await manifest.read())
-    profile.version_manifest = manifest_model.model_dump()
-    profile.updated_at = datetime.now(UTC)
-    await profile.save(update_fields=["version_manifest", "updated_at"])
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))]
 
 
 @app_post_fastui("/api/admin/profiles/{profile_id}/files/", dependencies=[Depends(admin_auth)])
