@@ -26,7 +26,8 @@ from tortoise.expressions import Q
 
 from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
-from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm
+from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
+    ProfileAddressForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -337,6 +338,27 @@ async def admin_edit_profile_manifest(profile_id: int, form: ProfileManifestForm
     profile.version_manifest = manifest_model.model_dump()
     profile.updated_at = datetime.now(UTC)
     await profile.save(update_fields=["version_manifest", "updated_at"])
+
+    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+
+
+@app.post("/admin-new/profiles/{profile_id}/addresses", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_add_profile_address(profile_id: int, form: ProfileAddressForm = Form()):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+
+    await ProfileServerAddress.create(profile=profile, name=form.name, ip=form.address)
+
+    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+
+
+@app.post("/admin-new/profiles/{profile_id}/addresses/{address_id}/delete", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_delete_profile_address(profile_id: int, address_id: int):
+    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+
+    if (address := await ProfileServerAddress.get_or_none(profile=profile, id=address_id)) is not None:
+        await address.delete()
 
     return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
 
@@ -754,40 +776,6 @@ def HiddenInput(*, name: str, value: str | int, required: bool = True) -> c.Form
         class_name="d-none",
         title="",
     )
-
-
-@app_post_fastui("/api/admin/profiles/{profile_id}/addresses/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/profiles/{profile_id}/addresses", dependencies=[Depends(admin_auth)])
-async def add_profile_address(
-        profile_id: int,
-        name: str = Form(), address: str = Form(),
-):
-    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    await ProfileServerAddress.create(profile=profile, name=name, ip=address)
-
-    return [
-        c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))
-    ]
-
-
-@app_post_fastui("/api/admin/profiles/{profile_id}/addresses/{address_id}/delete/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/profiles/{profile_id}/addresses/{address_id}/delete", dependencies=[Depends(admin_auth)])
-async def delete_profile_address(
-        profile_id: int, address_id: int,
-):
-    if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    if (address := await ProfileServerAddress.get_or_none(id=address_id)) is None:
-        raise HTTPException(status_code=404, detail="Address not found")
-
-    await address.delete()
-
-    return [
-        c.FireEvent(event=GoToEvent(url=f"{PREFIX}/profiles/{profile.id}?{time()}"))
-    ]
 
 
 def ips_table_head() -> c.Div:

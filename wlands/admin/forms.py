@@ -25,3 +25,8 @@ class ProfileManifestForm(BaseModel):
 
 class ProfileCreateForm(ProfileInfoForm, ProfileManifestForm):
     ...
+
+
+class ProfileAddressForm(BaseModel):
+    name: str
+    address: str
