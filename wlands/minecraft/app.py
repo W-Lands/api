@@ -6,7 +6,7 @@ from uuid import UUID
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
-from fastapi import FastAPI, Depends, Response, Body
+from fastapi import FastAPI, Depends, Response
 
 from .dependencies import mc_user_auth, mc_user_auth_data
 from .schemas import JoinRequestData, ReportRequest
@@ -14,7 +14,7 @@ from ..config import YGGDRASIL_PUBLIC_STR
 from ..exceptions import BadRequestException, ForbiddenException
 from ..models import PlayerKeyPair, GameJoinRequest, User, ReportMessage, ReportType, PlayerReport
 
-app = FastAPI()
+app = FastAPI(openapi_url=None)
 
 
 @app.get("/services/player/attributes")

@@ -2,7 +2,7 @@ from datetime import datetime, UTC
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Header, Depends, Cookie
+from fastapi import Depends, Cookie, Request
 
 from ..models import UserSession, User
 
@@ -40,22 +40,11 @@ async def authorize_admin(token: str) -> User:
     return session.user
 
 
-async def admin_auth(authorization: str = Header(default="")) -> User:
-    return await authorize_admin(authorization)
-
-
-async def admin_opt_auth(authorization: str = Header(default="")) -> User | None:
-    try:
-        return await authorize_admin(authorization)
-    except NotAuthorized:
-        return None
-
-
-async def admin_auth_new(auth_token: str = Cookie(default="")) -> User:
+async def admin_auth(auth_token: str = Cookie(default="")) -> User:
     return await authorize_admin(auth_token)
 
 
-async def admin_opt_auth_new(auth_token: str = Cookie(default="")) -> User | None:
+async def admin_opt_auth(auth_token: str = Cookie(default="")) -> User | None:
     try:
         return await authorize_admin(auth_token)
     except NotAuthorized:
@@ -69,10 +58,14 @@ async def admin_opt_auth_session(auth_token: str = Cookie(default="")) -> UserSe
         return None
 
 
-AdminAuthSessionMaybe = Annotated[UserSession | None, Depends(admin_opt_auth_session)]
-# TODO: rename everything to AdminUser*
-AdminAuthMaybe = Annotated[User | None, Depends(admin_opt_auth)]
-AdminAuthNewDep = Depends(admin_auth_new)
-AdminAuthMaybeNewDep = Depends(admin_opt_auth_new)
-AdminAuthNew = Annotated[User | None, AdminAuthNewDep]
-AdminAuthMaybeNew = Annotated[User | None, AdminAuthMaybeNewDep]
+async def root_path_dep(request: Request) -> str:
+    return request.scope.get("root_path")
+
+
+AdminSessionMaybe = Annotated[UserSession | None, Depends(admin_opt_auth_session)]
+AdminUserDep = Depends(admin_auth)
+AdminUserMaybeDep = Depends(admin_opt_auth)
+AdminUser = Annotated[User | None, AdminUserDep]
+AdminUserMaybe = Annotated[User | None, AdminUserMaybeDep]
+
+RootPath = Annotated[str, Depends(root_path_dep)]

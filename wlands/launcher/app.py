@@ -23,7 +23,7 @@ from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnoun
     ProfileServerAddress
 from ..models.launcher_update import LauncherUpdate, UpdateOs
 
-app = FastAPI()
+app = FastAPI(openapi_url=None)
 
 
 @app.post("/auth/login", response_model=AuthResponse)
