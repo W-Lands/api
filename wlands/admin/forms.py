@@ -71,3 +71,9 @@ class CreateUpdateAutoForm(BaseModel):
 class UpdateAuthlibForm(BaseModel):
     min_launcher_version: int
     file: UploadFile | None = None
+
+
+class EditUpdateForm(BaseModel):
+    name: str
+    changelog: str
+    public: bool = False

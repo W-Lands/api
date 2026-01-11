@@ -28,7 +28,7 @@ from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth,
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
     ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
-    CreateUpdateAutoForm, UpdateAuthlibForm
+    CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -710,11 +710,25 @@ async def create_update_auto(admin: AdminAuthNew, form: CreateUpdateAutoForm = F
 
 @app.get("/admin-new/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_update_info_page(request: Request, update_id: int):
-    update = await LauncherUpdate.get_or_none(id=update_id)
+    if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/launcher-updates", 303)
 
     return templates.TemplateResponse(request=request, name="update.jinja2", context={
         "update": update,
     })
+
+
+@app.post("/admin-new/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_edit_launcher_update(update_id: int, form: EditUpdateForm = Form()):
+    if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/launcher-updates", 303)
+
+    update.name = form.name
+    update.changelog = form.changelog
+    update.public = form.public
+    await update.save(update_fields=["name", "changelog", "public"])
+
+    return RedirectResponse(f"/admin/admin-new/launcher-updates/{update.id}", 303)
 
 
 @app.get("/admin-new/launcher-announcements", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
@@ -774,23 +788,6 @@ async def create_authlib_agent(admin: AdminAuthNew, form: UpdateAuthlibForm = Fo
     )
 
     return RedirectResponse(f"/admin/admin-new/authlib-agent", 303)
-
-
-@app_post_fastui("/api/admin/launcher-updates/{update_id}/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/launcher-updates/{update_id}", dependencies=[Depends(admin_auth)])
-async def edit_launcher_update(
-        update_id: int,
-        name: str = Form(), changelog: str = Form(), public: bool = Form(default=False),
-):
-    if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
-        raise HTTPException(status_code=404, detail="Update not found")
-
-    update.name = name
-    update.changelog = changelog
-    update.public = public
-    await update.save(update_fields=["name", "changelog", "public"])
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-updates/{update.id}?{time()}"))]
 
 
 @app_post_fastui("/api/admin/launcher-announcements/")
