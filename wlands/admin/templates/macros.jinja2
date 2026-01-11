@@ -2,3 +2,39 @@
     <dt class="col-sm-3 col-md-2 text-sm-end">{{ field }}</dt>
     <dd class="col-sm-9 col-md-10">{{ value }}</dd>
 {% endmacro %}
+
+{% macro render_pagination(pagination, endpoint) %}
+    <div class="page-items">
+        {{ pagination.page_offset }} - {{ pagination.next_page_offset }} of {{ pagination.total }}
+    </div>
+    <ul class="pagination">
+        <li class="page-item">
+            <a href="{{ url_for(endpoint) }}?page={{ pagination.page - 1 }}"
+               class="page-link {% if not pagination.has_prev %}disabled{% endif %}">
+                Previous
+            </a>
+        </li>
+        {% for page in pagination.pages %}
+            {% if page is not none %}
+                <li class="page-item {% if page == pagination.page %}active{% endif %}">
+                    <a
+                            href="{{ url_for(endpoint) }}?page={{ page }}"
+                            class="page-link"
+                            {% if page == pagination.page %}aria-current="page"{% endif %}>
+                        {{ page }}
+                    </a>
+                </li>
+            {% else %}
+                <li class="page-item">
+                    <a href="#" class="page-link disabled"><span class=ellipsis>…</span></a>
+                </li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item">
+            <a href="{{ url_for(endpoint) }}?page={{ pagination.page + 1 }}"
+               class="page-link {% if not pagination.has_next %}disabled{% endif %}">
+                Next
+            </a>
+        </li>
+    </ul>
+{% endmacro %}

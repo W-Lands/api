@@ -28,7 +28,6 @@ from wlands.launcher.qtifw_update_xml import Updates
 from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFile, ProfileFileLoc, ProfileFileAction, \
     LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress
 
-# TODO: pagination in pages with tables
 
 app = FastAPI(openapi_url=None)
 templates_env = Environment(
@@ -62,6 +61,33 @@ class UnappliedProfileFile(BaseModel):
     path: str
     created: bool = False
     deleted: bool = False
+
+
+class Pagination:
+    def __init__(self, page: int, page_size: int, total: int, add_pages_num: int = 2) -> None:
+        self.page = page
+        self.page_size = page_size
+        self.total = total
+        self.total_pages = (total + page_size - 1) // page_size
+        self.has_prev = self.page > 1
+        self.has_next = self.page < self.total_pages
+        self.page_offset = page_size * (page - 1)
+        self.next_page_offset = min(total, page_size * page)
+        self.pages: list[int | None] = [
+            p
+            for p in range(page - add_pages_num, page + add_pages_num + 1)
+            if 1 <= p <= self.total_pages
+        ]
+
+        if self.pages[0] != 1:
+            if self.pages[0] != 2:
+                self.pages.insert(0, None)
+            self.pages.insert(0, 1)
+
+        if self.pages[-1] != self.total_pages:
+            if self.pages[-1] != (self.total_pages - 1):
+                self.pages.append(None)
+            self.pages.append(self.total_pages)
 
 
 profile_root_dirs: dict[ProfileFileLoc, ProfileRootDir] = {
@@ -121,7 +147,10 @@ async def _users_page(request: Request, page: int, create_error: str | None = No
     PAGE_SIZE = 25
 
     users = await User.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("created_at")
+    total = await User.all().count()
+
     return templates.TemplateResponse(request=request, name="users.jinja2", context={
+        "pagination": Pagination(page, PAGE_SIZE, total),
         "users": users,
         "error": create_error,
         "show_create_modal": bool(create_error),
@@ -208,8 +237,11 @@ async def admin_profiles_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
 
     profiles = await GameProfile.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
+    total = await GameProfile.all().count()
+
     return templates.TemplateResponse(request=request, name="profiles.jinja2", context={
         "profiles": profiles,
+        "pagination": Pagination(page, PAGE_SIZE, total),
     })
 
 
@@ -544,9 +576,12 @@ async def admin_updates_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
 
     updates = await LauncherUpdate.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
+    total = await LauncherUpdate.all().count()
+
     return templates.TemplateResponse(request=request, name="updates.jinja2", context={
         "updates": updates,
         "available_os": list(UpdateOs),
+        "pagination": Pagination(page, PAGE_SIZE, total),
     })
 
 
@@ -716,9 +751,12 @@ async def admin_announcements_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
 
     announcements = await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
+    total = await LauncherAnnouncement.all().count()
+
     return templates.TemplateResponse(request=request, name="announcements.jinja2", context={
         "announcements": announcements,
         "available_os": list(AnnouncementOs),
+        "pagination": Pagination(page, PAGE_SIZE, total),
     })
 
 

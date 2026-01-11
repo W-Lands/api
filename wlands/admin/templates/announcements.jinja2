@@ -1,4 +1,5 @@
 {% extends "layout.jinja2" %}
+{% from "macros.jinja2" import render_pagination with context %}
 
 {% block title %}Announcements{% endblock %}
 {% block nav_ann %}active{% endblock %}
@@ -32,6 +33,8 @@
         {% endfor %}
         </tbody>
     </table>
+
+    {{ render_pagination(pagination, "admin_announcements_page") }}
 
     <div class="modal fade" id="create-announcement-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
