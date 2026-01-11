@@ -1,7 +1,9 @@
-from fastapi import UploadFile, File
-from pydantic import BaseModel, EmailStr, SecretStr, Field
+from datetime import datetime
 
-from wlands.models import UpdateOs
+from fastapi import UploadFile, File
+from pydantic import BaseModel, EmailStr, SecretStr, Field, NaiveDatetime
+
+from wlands.models import UpdateOs, AnnouncementOs
 
 
 class LoginForm(BaseModel):
@@ -77,3 +79,19 @@ class EditUpdateForm(BaseModel):
     name: str
     changelog: str
     public: bool = False
+
+
+class CreateAnnouncementForm(BaseModel):
+    name: str
+    text: str
+    os: AnnouncementOs
+    onetime: bool = False
+    active_from: datetime
+    active_to: datetime
+
+
+class UpdateAnnouncementForm(BaseModel):
+    text: str
+    onetime: bool = False
+    active_from: datetime
+    active_to: datetime

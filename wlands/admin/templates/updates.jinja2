@@ -58,8 +58,9 @@
                         <div class="mb-3">
                             <label for="os-select" class="form-label fw-bold">Os</label>
                             <select class="form-select" name="os" id="os-select">
-                                <option value="1">Windows</option>
-                                <option value="2">Linux</option>
+                                {% for os in available_os %}
+                                    <option value="{{ os.value }}">{{ os.name|lower|title }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div class="mb-3">

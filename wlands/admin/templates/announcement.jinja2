@@ -17,5 +17,40 @@
         {{ macros.details_row("Text", announcement.text) }}
     </dl>
 
-    <button class="btn btn-warning">[TODO] Edit</button>
+    <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#edit-announcement-modal">Edit</button>
+
+    <div class="modal fade" id="edit-announcement-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5">Edit announcement</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form action="" method="POST" id="edit-announcement-form" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="active-from-input" class="form-label fw-bold">Active from</label>
+                            <input type="datetime-local" class="form-control" id="active-from-input" name="active_from" required value="{{ announcement.active_from|format_datetime(True) }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="active-to-input" class="form-label fw-bold">Active to</label>
+                            <input type="datetime-local" class="form-control" id="active-to-input" name="active_to" required value="{{ announcement.active_to|format_datetime(True) }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="changelog-input" class="form-label fw-bold">Text</label>
+                            <textarea class="form-control" id="changelog-input" name="text" required>{{ announcement.text }}</textarea>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <label for="onetime-checkbox" class="form-label form-check-label">Onetime</label>
+                            <input type="checkbox" class="form-check-input" id="onetime-checkbox" name="onetime" {% if announcement.onetime %}checked{% endif %}>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" form="edit-announcement-form">Edit</button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}

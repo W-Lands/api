@@ -20,5 +20,7 @@ def format_bool(value: bool) -> str:
     return "✓" if value else "×"
 
 
-def format_datetime(value: datetime) -> str:
+def format_datetime(value: datetime, html: bool = False) -> str:
+    if html:
+        return value.strftime("%Y-%m-%dT%H:%M")
     return value.strftime("%d.%m.%Y %H:%M:%S")

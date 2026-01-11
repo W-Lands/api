@@ -28,7 +28,7 @@ from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth,
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
     ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
-    CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm
+    CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm, CreateAnnouncementForm, UpdateAnnouncementForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -567,6 +567,7 @@ async def admin_updates_page(request: Request, page: int = 1):
     updates = await LauncherUpdate.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
     return templates.TemplateResponse(request=request, name="updates.jinja2", context={
         "updates": updates,
+        "available_os": list(UpdateOs),
     })
 
 
@@ -738,16 +739,59 @@ async def admin_announcements_page(request: Request, page: int = 1):
     announcements = await LauncherAnnouncement.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("-id")
     return templates.TemplateResponse(request=request, name="announcements.jinja2", context={
         "announcements": announcements,
+        "available_os": list(AnnouncementOs),
     })
 
 
+@app.post("/admin-new/launcher-announcements", response_class=HTMLResponse)
+async def admin_create_announcement(admin: AdminAuthNew, form: CreateAnnouncementForm = Form()):
+    if form.active_from >= form.active_to:
+        raise HTTPException(status_code=400, detail="\"Active from\" cannot be bigger than \"Active to\"")
+
+    announcement = await LauncherAnnouncement.create(
+        created_by=admin,
+        name=form.name,
+        text=form.text,
+        onetime=form.onetime,
+        active_from=form.active_from.replace(tzinfo=timezone.utc),
+        active_to=form.active_to.replace(tzinfo=timezone.utc),
+        os=form.os,
+    )
+
+    return RedirectResponse(f"/admin/admin-new/launcher-announcements/{announcement.id}", 303)
+
+
+
 @app.get("/admin-new/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
-async def admin_update_info_page(request: Request, ann_id: int):
-    ann = await LauncherAnnouncement.get_or_none(id=ann_id)
+async def admin_announcement_info_page(request: Request, ann_id: int):
+    if (ann := await LauncherAnnouncement.get_or_none(id=ann_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/launcher-announcements", 303)
 
     return templates.TemplateResponse(request=request, name="announcement.jinja2", context={
         "announcement": ann,
     })
+
+
+@app.post("/admin-new/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def admin_edit_launcher_announcement(ann_id: int, form: UpdateAnnouncementForm = Form()):
+    active_from = form.active_from.replace(tzinfo=timezone.utc)
+    active_to = form.active_to.replace(tzinfo=timezone.utc)
+
+    if active_from >= active_to:
+        raise HTTPException(status_code=400, detail="\"Active from\" cannot be bigger than \"Active to\"")
+    if datetime.now(UTC) >= active_to:
+        raise HTTPException(status_code=400, detail="\"Active to\" cannot be in the past")
+
+    if (announcement := await LauncherAnnouncement.get_or_none(id=ann_id)) is None:
+        return RedirectResponse(f"/admin/admin-new/launcher-announcements", 303)
+
+    announcement.text = form.text
+    announcement.active_from = active_from
+    announcement.active_to = active_to
+    announcement.onetime = form.onetime
+    await announcement.save(update_fields=["text", "active_from", "active_to", "onetime"])
+
+    return RedirectResponse(f"/admin/admin-new/launcher-announcements/{announcement.id}", 303)
 
 
 @app.get("/admin-new/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
@@ -788,51 +832,6 @@ async def create_authlib_agent(admin: AdminAuthNew, form: UpdateAuthlibForm = Fo
     )
 
     return RedirectResponse(f"/admin/admin-new/authlib-agent", 303)
-
-
-@app_post_fastui("/api/admin/launcher-announcements/")
-@app_post_fastui("/api/admin/launcher-announcements")
-async def create_announcement(
-        admin: User = Depends(admin_auth),
-        name: str = Form(), text: str = Form(), os_type: AnnouncementOs = Form(), onetime: bool = Form(default=False),
-        active_from: datetime = Form(), active_to: datetime = Form(),
-):
-    if active_from >= active_to:
-        raise HTTPException(status_code=400, detail="\"Active from\" cannot be bigger than \"Active to\"")
-
-    announcement = await LauncherAnnouncement.create(
-        created_by=admin,
-        name=name,
-        text=text,
-        onetime=onetime,
-        active_from=active_from.replace(tzinfo=timezone.utc),
-        active_to=active_to.replace(tzinfo=timezone.utc),
-        os=os_type,
-    )
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-announcements/{announcement.id}?{time()}"))]
-
-
-@app_post_fastui("/api/admin/launcher-announcements/{announcement_id}/", dependencies=[Depends(admin_auth)])
-@app_post_fastui("/api/admin/launcher-announcements/{announcement_id}", dependencies=[Depends(admin_auth)])
-async def edit_launcher_announcement(
-        announcement_id: int,
-        text: str = Form(), onetime: bool = Form(default=False),
-        active_from: datetime = Form(), active_to: datetime = Form(),
-):
-    if active_from >= active_to:
-        raise HTTPException(status_code=400, detail="\"Active from\" cannot be bigger than \"Active to\"")
-
-    if (announcement := await LauncherAnnouncement.get_or_none(id=announcement_id)) is None:
-        raise HTTPException(status_code=404, detail="Announcement not found")
-
-    announcement.text = text
-    announcement.active_from = active_from.replace(tzinfo=timezone.utc)
-    announcement.active_to = active_to.replace(tzinfo=timezone.utc)
-    announcement.onetime = onetime
-    await announcement.save(update_fields=["text", "active_from", "active_to", "onetime"])
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-announcements/{announcement.id}?{time()}"))]
 
 
 @app.get("/{path:path}")
