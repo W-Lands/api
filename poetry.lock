@@ -422,24 +422,6 @@ standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.8)", "htt
 standard-no-fastapi-cloud-cli = ["email-validator (>=2.0.0)", "fastapi-cli[standard-no-fastapi-cloud-cli] (>=0.0.8)", "httpx (>=0.23.0)", "jinja2 (>=3.1.5)", "python-multipart (>=0.0.18)", "uvicorn[standard] (>=0.12.0)"]
 
 [[package]]
-name = "fastui"
-version = "0.7.0"
-description = "Build better UIs faster."
-optional = false
-python-versions = ">=3.8"
-groups = ["main"]
-files = [
-    {file = "fastui-0.7.0-py3-none-any.whl", hash = "sha256:3e903828b26ecaef2da46e30bbe1123db20cf4a1c32d6c082665f52de9f639d2"},
-    {file = "fastui-0.7.0.tar.gz", hash = "sha256:08ec1b8437653fc37caaf3dae46566a43dbda3f190c62c43f8f3d063261dd1e8"},
-]
-
-[package.dependencies]
-pydantic = {version = ">=2.5.2", extras = ["email"]}
-
-[package.extras]
-fastapi = ["fastapi (>=0.104)", "python-multipart (>=0.0.6)"]
-
-[[package]]
 name = "h11"
 version = "0.16.0"
 description = "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1"
@@ -1298,4 +1280,4 @@ test = ["aiohttp (>=3.10.5)", "flake8 (>=5.0,<6.0)", "mypy (>=0.800)", "psutil",
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "2d0b2612954157576b412f3ad0febccd7c95861f8b1782f389829bcb90aec0e3"
+content-hash = "4a681fdd29b7f4389b480dd0117bb74aa743974de5dd3298ee92487aa76363a4"

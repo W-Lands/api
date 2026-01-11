@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "api"
+name = "wlands-backend"
 version = "0.1.0"
 description = ""
 authors = ["RuslanUC <dev_ruslan_uc@protonmail.com>"]
@@ -19,7 +19,6 @@ s3lite = "^0.1.11"
 pydantic = {extras = ["email"], version = "2.9.2"}
 aerich = "^0.9.1"
 python-multipart = "^0.0.20"
-fastui = "^0.7.0"
 pydantic-xml = "^2.17.3"
 jinja2 = "^3.1.6"
 

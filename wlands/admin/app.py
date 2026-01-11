@@ -2,30 +2,22 @@ import json
 import os
 from asyncio import sleep
 from datetime import datetime, timezone
-from functools import partial
 from hashlib import sha1
 from pathlib import Path
-from time import time
-from typing import Self, Literal
 from uuid import UUID, uuid4
 from zipfile import ZipFile
 
 from bcrypt import checkpw, hashpw, gensalt
-from fastapi import FastAPI, Depends, Request, HTTPException, Form, UploadFile
-from fastui import prebuilt_html, FastUI, AnyComponent, components as c
-from fastui.components import forms as f
-from fastui.components.display import DisplayLookup
-from fastui.events import GoToEvent, AuthEvent, PageEvent
-from fastui.forms import fastui_form, FormFile, SelectOption
+from fastapi import FastAPI, Request, HTTPException, Form
 from jinja2 import Environment, FileSystemLoader
-from pydantic import BaseModel, EmailStr, Field, SecretStr
+from pydantic import BaseModel
 from pytz import UTC
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.templating import Jinja2Templates
 from tortoise.expressions import Q
 
-from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth, AdminAuthMaybe, AdminAuthMaybeNew, \
-    AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
+from wlands.admin.dependencies import NotAuthorized, AdminAuthMaybeNew, AdminAuthNew, AdminAuthNewDep, \
+    AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
     ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
     CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm, CreateAnnouncementForm, UpdateAnnouncementForm
@@ -33,10 +25,8 @@ from wlands.admin.jinja_filters import format_size, format_enum, format_bool, fo
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
 from wlands.launcher.qtifw_update_xml import Updates
-from wlands.models import User, UserSession, UserPydantic, GameSession, ProfilePydantic, GameProfile, ProfileFile, \
-    ProfileFileLoc, ProfileFileAction, LauncherUpdate, LauncherUpdatePydantic, UpdateOs, LauncherAnnouncement, \
-    LauncherAnnouncementPydantic, AnnouncementOs, AuthlibAgent, AuthlibAgentPydantic, ProfileServerAddress
-
+from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFile, ProfileFileLoc, ProfileFileAction, \
+    LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress
 
 # TODO: pagination in pages with tables
 # TODO: dont use "profile_dir" and "game_dir", use ProfileFileLoc
@@ -54,9 +44,6 @@ templates_env.filters["format_size"] = format_size
 templates_env.filters["format_enum"] = format_enum
 templates_env.filters["format_bool"] = format_bool
 templates_env.filters["format_datetime"] = format_datetime
-
-app_get_fastui = partial(app.get, response_model=FastUI, response_model_exclude_none=True)
-app_post_fastui = partial(app.post, response_model=FastUI, response_model_exclude_none=True)
 
 
 class ProfileRootDir(BaseModel):
@@ -832,11 +819,6 @@ async def create_authlib_agent(admin: AdminAuthNew, form: UpdateAuthlibForm = Fo
     )
 
     return RedirectResponse(f"/admin/admin-new/authlib-agent", 303)
-
-
-@app.get("/{path:path}")
-async def html_landing() -> HTMLResponse:
-    return HTMLResponse(prebuilt_html(title="WLands admin panel", api_root_url=PREFIX_API))
 
 
 @app.exception_handler(NotAuthorized)
