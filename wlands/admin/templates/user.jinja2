@@ -12,7 +12,7 @@
 
 {% block content %}
     <h1>{{ user.nickname }}</h1>
-    <a href="/admin/admin-new/users" class="">&lt;- Back</a>
+    <a href="{{ url_for("admin_users_page") }}" class="">&lt;- Back</a>
     <dl class="row">
         {{ macros.details_row("Id", user.id) }}
         {{ macros.details_row("Email", user.email) }}

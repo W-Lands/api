@@ -20,7 +20,7 @@
         {% for profile in profiles %}
             <tr>
                 <td>{{ profile.id }}</td>
-                <td><a href="/admin/admin-new/profiles/{{ profile.id }}">{{ profile.name }}</a></td>
+                <td><a href="{{ url_for("admin_profile_info_page", profile_id=profile.id) }}">{{ profile.name }}</a></td>
                 <td>{{ profile.created_at|format_datetime }}</td>
                 <td>{{ profile.updated_at|format_datetime }}</td>
                 <td>{{ profile.public|format_bool }}</td>

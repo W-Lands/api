@@ -18,24 +18,24 @@
         <div class="collapse navbar-collapse" id="navbar-content">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <li class="nav-item">
-                    <a class="nav-link {% block nav_users %}{% endblock %}" href="/admin/admin-new/users">Users</a>
+                    <a class="nav-link {% block nav_users %}{% endblock %}" href="{{ url_for("admin_users_page") }}">Users</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link {% block nav_profiles %}{% endblock %}" href="/admin/admin-new/profiles">Profiles</a>
+                    <a class="nav-link {% block nav_profiles %}{% endblock %}" href="{{ url_for("admin_profiles_page") }}">Profiles</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link {% block nav_updates %}{% endblock %}" href="/admin/admin-new/launcher-updates">Launcher updates</a>
+                    <a class="nav-link {% block nav_updates %}{% endblock %}" href="{{ url_for("admin_updates_page") }}">Launcher updates</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link {% block nav_ann %}{% endblock %}" href="/admin/admin-new/launcher-announcements">Launcher announcements</a>
+                    <a class="nav-link {% block nav_ann %}{% endblock %}" href="{{ url_for("admin_announcements_page") }}">Launcher announcements</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link {% block nav_authlib %}{% endblock %}" href="/admin/admin-new/authlib-agent">Authlib agent</a>
+                    <a class="nav-link {% block nav_authlib %}{% endblock %}" href="{{ url_for("admin_authlib_page") }}">Authlib agent</a>
                 </li>
             </ul>
             <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
                 <li class="nav-item">
-                    <a class="nav-link" href="/admin/admin-new/logout">Logout</a>
+                    <a class="nav-link" href="{{ url_for("admin_logout_page") }}">Logout</a>
                 </li>
             </ul>
         </div>

@@ -22,7 +22,7 @@
         {% for ann in announcements %}
             <tr>
                 <td>{{ ann.id }}</td>
-                <td><a href="/admin/admin-new/launcher-announcements/{{ ann.id }}">{{ ann.name }}</a></td>
+                <td><a href="{{ url_for("admin_announcement_info_page", ann_id=ann.id) }}">{{ ann.name }}</a></td>
                 <td>{{ ann.created_at|format_datetime }}</td>
                 <td>{{ ann.active_from|format_datetime }}</td>
                 <td>{{ ann.active_to|format_datetime }}</td>

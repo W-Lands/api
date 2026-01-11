@@ -31,9 +31,6 @@ from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFi
 # TODO: pagination in pages with tables
 # TODO: dont use "profile_dir" and "game_dir", use ProfileFileLoc
 
-PREFIX = "/admin"
-PREFIX_API = f"{PREFIX}/api"
-
 app = FastAPI()
 templates_env = Environment(
     loader=FileSystemLoader(Path(__file__).parent / "templates"),
@@ -83,28 +80,28 @@ profile_root_dirs: dict[str, ProfileRootDir] = {
 }
 
 
-@app.get("/admin-new/login", response_class=HTMLResponse)
+@app.get("/login", response_class=HTMLResponse)
 def admin_login_page(user: AdminAuthMaybeNew, request: Request):
     if user is not None:
-        return RedirectResponse(f"/admin/admin-new/users")
+        return RedirectResponse(f"/admin/users")
 
     return templates.TemplateResponse(request=request, name="login.jinja2")
 
 
-@app.get("/admin-new/logout")
+@app.get("/logout")
 async def admin_logout_page(session: AdminAuthSessionMaybe):
     if session is not None:
         await session.delete()
 
-    resp = RedirectResponse(f"/admin/admin-new/login", 303)
+    resp = RedirectResponse(f"/admin/login", 303)
     resp.delete_cookie("auth_token")
     return resp
 
 
-@app.post("/admin-new/login", response_class=HTMLResponse)
+@app.post("/login", response_class=HTMLResponse)
 async def admin_login(user: AdminAuthMaybeNew, request: Request, form: LoginForm = Form()):
     if user is not None:
-        return RedirectResponse(f"/admin/admin-new/users")
+        return RedirectResponse(f"/admin/users")
 
     error_resp = templates.TemplateResponse(request=request, name="login.jinja2", context={
         "error": "Wrong credentials."
@@ -117,7 +114,7 @@ async def admin_login(user: AdminAuthMaybeNew, request: Request, form: LoginForm
 
     session = await UserSession.create(user=user)
 
-    resp = RedirectResponse(f"/admin/admin-new/users", 303)
+    resp = RedirectResponse(f"/admin/users", 303)
     resp.set_cookie(
         "auth_token", f"{user.id.hex}{session.id.hex}{session.token}", expires=int(session.expires_at.timestamp())
     )
@@ -136,12 +133,12 @@ async def _users_page(request: Request, page: int, create_error: str | None = No
     })
 
 
-@app.get("/admin-new/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_users_page(request: Request, page: int = 1):
     return await _users_page(request, page)
 
 
-@app.post("/admin-new/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/users", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_create_user(request: Request, form: UserCreateForm = Form()):
     if await User.filter(nickname=form.nickname).exists():
         return await _users_page(request, 1, "User with this nickname already exists.", form.nickname)
@@ -152,10 +149,10 @@ async def admin_create_user(request: Request, form: UserCreateForm = Form()):
         password=hashpw(form.password.get_secret_value().encode("utf8"), gensalt()).decode("utf8"),
     )
 
-    return RedirectResponse(f"/admin/admin-new/users/{new_user.id}", 303)
+    return RedirectResponse(f"/admin/users/{new_user.id}", 303)
 
 
-@app.get("/admin-new/users/{user_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/users/{user_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_user_info_page(request: Request, user_id: UUID):
     target = await User.get_or_none(id=user_id)
     return templates.TemplateResponse(request=request, name="user.jinja2", context={
@@ -163,10 +160,10 @@ async def admin_user_info_page(request: Request, user_id: UUID):
     })
 
 
-@app.post("/admin-new/users/{user_id}/toggle-ban", response_class=HTMLResponse)
+@app.post("/users/{user_id}/toggle-ban", response_class=HTMLResponse)
 async def admin_ban_unban_user(request: Request, user_id: UUID, admin: AdminAuthNew):
     if (target := await User.get_or_none(id=user_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/users", 303)
+        return RedirectResponse(f"/admin/users", 303)
     if target.id == admin.id or target.admin:
         return templates.TemplateResponse(request=request, name="user.jinja2", context={
             "user": target,
@@ -180,13 +177,13 @@ async def admin_ban_unban_user(request: Request, user_id: UUID, admin: AdminAuth
 
     await target.save(update_fields=["banned"])
 
-    return RedirectResponse(f"/admin/admin-new/users/{target.id}", 303)
+    return RedirectResponse(f"/admin/users/{target.id}", 303)
 
 
-@app.post("/admin-new/users/{user_id}", response_class=HTMLResponse)
+@app.post("/users/{user_id}", response_class=HTMLResponse)
 async def admin_edit_user(request: Request, user_id: UUID, admin: AdminAuthNew, nickname: str = Form()):
     if (target := await User.get_or_none(id=user_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/users", 303)
+        return RedirectResponse(f"/admin/users", 303)
     if target.id == admin.id or target.admin:
         return templates.TemplateResponse(request=request, name="user.jinja2", context={
             "user": target,
@@ -205,10 +202,10 @@ async def admin_edit_user(request: Request, user_id: UUID, admin: AdminAuthNew, 
     target.email = f"{nickname}@wlands.pepega"
     await target.save(update_fields=["nickname", "email"])
 
-    return RedirectResponse(f"/admin/admin-new/users/{target.id}", 303)
+    return RedirectResponse(f"/admin/users/{target.id}", 303)
 
 
-@app.get("/admin-new/profiles", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/profiles", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_profiles_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
 
@@ -266,7 +263,7 @@ async def _get_profile_files(profile: GameProfile, root: ProfileRootDir, prefix:
     return vfiles
 
 
-@app.get("/admin-new/profiles/{profile_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/profiles/{profile_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_profile_info_page(
         request: Request, profile_id: int, dir_type: str | None = None, dir_prefix: str = ".",
 ):
@@ -312,7 +309,7 @@ async def admin_profile_info_page(
     })
 
 
-@app.post("/admin-new/profiles", response_class=HTMLResponse)
+@app.post("/profiles", response_class=HTMLResponse)
 async def admin_create_profile(admin: AdminAuthNew, form: ProfileCreateForm = Form()):
     manifest_model = VersionManifest.model_validate_json(await form.manifest.read())
     profile = await GameProfile.create(
@@ -323,26 +320,26 @@ async def admin_create_profile(admin: AdminAuthNew, form: ProfileCreateForm = Fo
         public=form.public,
     )
 
-    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+    return RedirectResponse(f"/admin/profiles/{profile.id}", 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_edit_profile(profile_id: int, form: ProfileInfoForm = Form()):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
 
     profile.name = form.name
     profile.description = form.description
     profile.public = form.public
     await profile.save(update_fields=["name", "description", "public"])
 
-    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+    return RedirectResponse(f"/admin/profiles/{profile.id}", 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}/manifest", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/manifest", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_edit_profile_manifest(profile_id: int, form: ProfileManifestForm = Form()):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
     if form.manifest.size is None or form.manifest.size > 256 * 1024:
         raise HTTPException(400, "Invalid manifest size!")
 
@@ -351,36 +348,36 @@ async def admin_edit_profile_manifest(profile_id: int, form: ProfileManifestForm
     profile.updated_at = datetime.now(UTC)
     await profile.save(update_fields=["version_manifest", "updated_at"])
 
-    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+    return RedirectResponse(f"/admin/profiles/{profile.id}", 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}/addresses", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/addresses", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_add_profile_address(profile_id: int, form: ProfileAddressForm = Form()):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
 
     await ProfileServerAddress.create(profile=profile, name=form.name, ip=form.address)
 
-    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+    return RedirectResponse(f"/admin/profiles/{profile.id}", 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}/addresses/{address_id}/delete", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/addresses/{address_id}/delete", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_delete_profile_address(profile_id: int, address_id: int):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
 
     if (address := await ProfileServerAddress.get_or_none(profile=profile, id=address_id)) is not None:
         await address.delete()
 
-    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+    return RedirectResponse(f"/admin/profiles/{profile.id}", 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}/files", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/files", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_upload_profile_files(profile_id: int, form: UploadProfileFilesForm = Form()):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
     if form.dir_type not in profile_root_dirs:
-        return RedirectResponse(f"/admin/admin-new/profiles/{profile_id}", 303)
+        return RedirectResponse(f"/admin/profiles/{profile_id}", 303)
 
     files_to_create = []
 
@@ -418,16 +415,16 @@ async def admin_upload_profile_files(profile_id: int, form: UploadProfileFilesFo
         await ProfileFile.bulk_create(files_to_create)
 
     return RedirectResponse(
-        f"/admin/admin-new/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}", 303,
+        f"/admin/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}", 303,
     )
 
 
-@app.post("/admin-new/profiles/{profile_id}/files/rename", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/files/rename", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_rename_profile_files(profile_id: int, form: RenameProfileFileForm = Form()):
-    result_url = f"/admin/admin-new/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}"
+    result_url = f"/admin/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}"
 
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
     if form.dir_type not in profile_root_dirs:
         return RedirectResponse(result_url, 303)
 
@@ -470,12 +467,12 @@ async def admin_rename_profile_files(profile_id: int, form: RenameProfileFileFor
     return RedirectResponse(result_url, 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}/files/delete", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/files/delete", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_delete_profile_files(profile_id: int, form: DeleteProfileFileForm = Form()):
-    result_url = f"/admin/admin-new/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}"
+    result_url = f"/admin/profiles/{profile_id}?dir_type={form.dir_type}&dir_prefix={form.dir_prefix}"
 
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
     if form.dir_type not in profile_root_dirs:
         return RedirectResponse(result_url, 303)
 
@@ -513,10 +510,10 @@ async def admin_delete_profile_files(profile_id: int, form: DeleteProfileFileFor
     return RedirectResponse(result_url, 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}/apply-files", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/apply-files", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def apply_profile_files(profile_id: int):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
 
     seen_paths = set()
     delete_q = Q()
@@ -534,20 +531,20 @@ async def apply_profile_files(profile_id: int):
         profile.updated_at = datetime.now(timezone.utc)
         await profile.save(update_fields=["updated_at"])
 
-    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+    return RedirectResponse(f"/admin/profiles/{profile.id}", 303)
 
 
-@app.post("/admin-new/profiles/{profile_id}/revert-files", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/profiles/{profile_id}/revert-files", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def revert_profile_files(profile_id: int):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/profiles", 303)
+        return RedirectResponse(f"/admin/profiles", 303)
 
     await ProfileFile.filter(profile=profile, created_at__gt=profile.updated_at).delete()
 
-    return RedirectResponse(f"/admin/admin-new/profiles/{profile.id}", 303)
+    return RedirectResponse(f"/admin/profiles/{profile.id}", 303)
 
 
-@app.get("/admin-new/launcher-updates", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/launcher-updates", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_updates_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
 
@@ -558,7 +555,7 @@ async def admin_updates_page(request: Request, page: int = 1):
     })
 
 
-@app.post("/admin-new/launcher-updates", response_class=HTMLResponse)
+@app.post("/launcher-updates", response_class=HTMLResponse)
 async def create_update(admin: AdminAuthNew, form: CreateUpdateForm = Form()):
     size = 0
     dir_id = uuid4()
@@ -666,10 +663,10 @@ async def create_update(admin: AdminAuthNew, form: CreateUpdateForm = Form()):
         dir_id=dir_id,
     )
 
-    return RedirectResponse(f"/admin/admin-new/launcher-updates/{update.id}", 303)
+    return RedirectResponse(f"/admin/launcher-updates/{update.id}", 303)
 
 
-@app.post("/admin-new/launcher-updates-auto", response_class=HTMLResponse)
+@app.post("/launcher-updates-auto", response_class=HTMLResponse)
 async def create_update_auto(admin: AdminAuthNew, form: CreateUpdateAutoForm = Form()):
     with ZipFile(form.file.file, "r") as zf:
         await sleep(0)
@@ -696,30 +693,30 @@ async def create_update_auto(admin: AdminAuthNew, form: CreateUpdateAutoForm = F
     return await create_update(admin, code, name, form.changelog, os_type, form.file)
 
 
-@app.get("/admin-new/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_update_info_page(request: Request, update_id: int):
     if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/launcher-updates", 303)
+        return RedirectResponse(f"/admin/launcher-updates", 303)
 
     return templates.TemplateResponse(request=request, name="update.jinja2", context={
         "update": update,
     })
 
 
-@app.post("/admin-new/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/launcher-updates/{update_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_edit_launcher_update(update_id: int, form: EditUpdateForm = Form()):
     if (update := await LauncherUpdate.get_or_none(id=update_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/launcher-updates", 303)
+        return RedirectResponse(f"/admin/launcher-updates", 303)
 
     update.name = form.name
     update.changelog = form.changelog
     update.public = form.public
     await update.save(update_fields=["name", "changelog", "public"])
 
-    return RedirectResponse(f"/admin/admin-new/launcher-updates/{update.id}", 303)
+    return RedirectResponse(f"/admin/launcher-updates/{update.id}", 303)
 
 
-@app.get("/admin-new/launcher-announcements", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/launcher-announcements", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_announcements_page(request: Request, page: int = 1):
     PAGE_SIZE = 25
 
@@ -730,7 +727,7 @@ async def admin_announcements_page(request: Request, page: int = 1):
     })
 
 
-@app.post("/admin-new/launcher-announcements", response_class=HTMLResponse)
+@app.post("/launcher-announcements", response_class=HTMLResponse)
 async def admin_create_announcement(admin: AdminAuthNew, form: CreateAnnouncementForm = Form()):
     if form.active_from >= form.active_to:
         raise HTTPException(status_code=400, detail="\"Active from\" cannot be bigger than \"Active to\"")
@@ -745,21 +742,21 @@ async def admin_create_announcement(admin: AdminAuthNew, form: CreateAnnouncemen
         os=form.os,
     )
 
-    return RedirectResponse(f"/admin/admin-new/launcher-announcements/{announcement.id}", 303)
+    return RedirectResponse(f"/admin/launcher-announcements/{announcement.id}", 303)
 
 
 
-@app.get("/admin-new/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_announcement_info_page(request: Request, ann_id: int):
     if (ann := await LauncherAnnouncement.get_or_none(id=ann_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/launcher-announcements", 303)
+        return RedirectResponse(f"/admin/launcher-announcements", 303)
 
     return templates.TemplateResponse(request=request, name="announcement.jinja2", context={
         "announcement": ann,
     })
 
 
-@app.post("/admin-new/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/launcher-announcements/{ann_id}", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_edit_launcher_announcement(ann_id: int, form: UpdateAnnouncementForm = Form()):
     active_from = form.active_from.replace(tzinfo=timezone.utc)
     active_to = form.active_to.replace(tzinfo=timezone.utc)
@@ -770,7 +767,7 @@ async def admin_edit_launcher_announcement(ann_id: int, form: UpdateAnnouncement
         raise HTTPException(status_code=400, detail="\"Active to\" cannot be in the past")
 
     if (announcement := await LauncherAnnouncement.get_or_none(id=ann_id)) is None:
-        return RedirectResponse(f"/admin/admin-new/launcher-announcements", 303)
+        return RedirectResponse(f"/admin/launcher-announcements", 303)
 
     announcement.text = form.text
     announcement.active_from = active_from
@@ -778,10 +775,10 @@ async def admin_edit_launcher_announcement(ann_id: int, form: UpdateAnnouncement
     announcement.onetime = form.onetime
     await announcement.save(update_fields=["text", "active_from", "active_to", "onetime"])
 
-    return RedirectResponse(f"/admin/admin-new/launcher-announcements/{announcement.id}", 303)
+    return RedirectResponse(f"/admin/launcher-announcements/{announcement.id}", 303)
 
 
-@app.get("/admin-new/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.get("/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def admin_authlib_page(request: Request):
     agent = await AuthlibAgent.filter().order_by("-id").first()
     return templates.TemplateResponse(request=request, name="authlib.jinja2", context={
@@ -789,7 +786,7 @@ async def admin_authlib_page(request: Request):
     })
 
 
-@app.post("/admin-new/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+@app.post("/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
 async def create_authlib_agent(admin: AdminAuthNew, form: UpdateAuthlibForm = Form()):
     if form.file is not None and (form.file.size is None or form.file.size > 1024 * 1024):
         raise HTTPException(status_code=404, detail="Invalid file size")
@@ -818,11 +815,11 @@ async def create_authlib_agent(admin: AdminAuthNew, form: UpdateAuthlibForm = Fo
         file_id=file_id,
     )
 
-    return RedirectResponse(f"/admin/admin-new/authlib-agent", 303)
+    return RedirectResponse(f"/admin/authlib-agent", 303)
 
 
 @app.exception_handler(NotAuthorized)
 async def not_authorized_handler(request: Request, exc: NotAuthorized):
-    resp = RedirectResponse(f"/admin/admin-new/login")
+    resp = RedirectResponse(f"/admin/login")
     resp.delete_cookie("auth_token")
     return resp

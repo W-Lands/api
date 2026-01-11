@@ -6,7 +6,7 @@
 
 {% block content %}
     <h1>{{ update.name }}</h1>
-    <a href="/admin/admin-new/launcher-updates">&lt;- Back</a>
+    <a href="{{ url_for("admin_updates_page") }}">&lt;- Back</a>
     <dl class="row">
         {{ macros.details_row("Id", update.id) }}
         {{ macros.details_row("Code", update.code) }}

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import UploadFile, File
-from pydantic import BaseModel, EmailStr, SecretStr, Field, NaiveDatetime
+from pydantic import BaseModel, EmailStr, SecretStr
 
 from wlands.models import UpdateOs, AnnouncementOs
 

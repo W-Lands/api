@@ -39,7 +39,7 @@
     {% endif %}
 
     <h1>{{ profile.name }}</h1>
-    <a href="/admin/admin-new/profiles">&lt;- Back</a>
+    <a href="{{ url_for("admin_profiles_page") }}">&lt;- Back</a>
     <dl class="row">
         {{ macros.details_row("Id", profile.id) }}
         {{ macros.details_row("Name", profile.name) }}
@@ -65,7 +65,7 @@
             {% for dir in root_dirs %}
                 <tr>
                     <td>
-                        <a href="/admin/admin-new/profiles/{{ profile.id }}?dir_type={{ dir.type }}">{{ dir.name }}</a>
+                        <a href="{{ url_for("admin_profile_info_page", profile_id=profile.id) }}?dir_type={{ dir.type }}">{{ dir.name }}</a>
                     </td>
                 </tr>
             {% endfor %}
@@ -74,7 +74,7 @@
     {% else %}
         <h3 class="mt-3">{{ current_root.name }}</h3>
         <div class="vstack">
-            <a href="/admin/admin-new/profiles/{{ profile.id }}">.. Back</a>
+            <a href="{{ url_for("admin_profile_info_page", profile_id=profile.id) }}">.. Back</a>
             <a href="#" data-bs-toggle="modal" data-bs-target="#upload-profile-file-modal">Upload file</a>
         </div>
 
@@ -93,7 +93,7 @@
                 <tr>
                     <td>
                         {% if file.id is none %}
-                            <a href="/admin/admin-new/profiles/{{ profile.id }}?dir_type={{ current_root.type }}&dir_prefix={{ dir_prefix }}{{ "/"|e }}{{ file.name }}">{{ file.name }}</a>
+                            <a href="{{ url_for("admin_profile_info_page", profile_id=profile.id) }}?dir_type={{ current_root.type }}&dir_prefix={{ dir_prefix }}{{ "/"|e }}{{ file.name }}">{{ file.name }}</a>
                         {% else %}
                             <a href="{{ file.url }}">{{ file.name }}</a>
                         {% endif %}

@@ -6,7 +6,7 @@
 
 {% block content %}
     <h1>{{ announcement.name }}</h1>
-    <a href="/admin/admin-new/launcher-announcements">&lt;- Back</a>
+    <a href="{{ url_for("admin_announcements_page") }}">&lt;- Back</a>
     <dl class="row">
         {{ macros.details_row("Id", announcement.id) }}
         {{ macros.details_row("Created At", announcement.created_at|format_datetime) }}
