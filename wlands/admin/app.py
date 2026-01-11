@@ -28,7 +28,7 @@ from wlands.admin.dependencies import admin_opt_auth, NotAuthorized, admin_auth,
     AdminAuthNew, AdminAuthNewDep, AdminAuthSessionMaybe
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
     ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
-    CreateUpdateAutoForm
+    CreateUpdateAutoForm, UpdateAuthlibForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -744,6 +744,38 @@ async def admin_authlib_page(request: Request):
     })
 
 
+@app.post("/admin-new/authlib-agent", response_class=HTMLResponse, dependencies=[AdminAuthNewDep])
+async def create_authlib_agent(admin: AdminAuthNew, form: UpdateAuthlibForm = Form()):
+    if form.file is not None and (form.file.size is None or form.file.size > 1024 * 1024):
+        raise HTTPException(status_code=404, detail="Invalid file size")
+
+    if form.file is None or form.file.size == 0:
+        prev_agent = await AuthlibAgent.filter().order_by("-id").first()
+        if prev_agent is None:
+            raise HTTPException(status_code=404, detail="There is no previous authlib agent available")
+        file_size = prev_agent.size
+        file_sha = prev_agent.sha1
+        file_id = prev_agent.file_id
+    else:
+        form.file.file.seek(0)
+        file_size = form.file.size
+        file_sha = sha1(form.file.file.read()).hexdigest().lower()
+        file_id = uuid4().hex
+
+        await form.file.seek(0)
+        await S3.upload_object(S3_FILES_BUCKET, f"authlib-agent/{file_id}/{file_sha}", form.file.file)
+
+    await AuthlibAgent.create(
+        created_by=admin,
+        size=file_size,
+        sha1=file_sha,
+        min_launcher_version=form.min_launcher_version,
+        file_id=file_id,
+    )
+
+    return RedirectResponse(f"/admin/admin-new/authlib-agent", 303)
+
+
 @app_post_fastui("/api/admin/launcher-updates/{update_id}/", dependencies=[Depends(admin_auth)])
 @app_post_fastui("/api/admin/launcher-updates/{update_id}", dependencies=[Depends(admin_auth)])
 async def edit_launcher_update(
@@ -804,40 +836,6 @@ async def edit_launcher_announcement(
     await announcement.save(update_fields=["text", "active_from", "active_to", "onetime"])
 
     return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/launcher-announcements/{announcement.id}?{time()}"))]
-
-
-@app_post_fastui("/api/admin/authlib-agent/")
-@app_post_fastui("/api/admin/authlib-agent")
-async def create_authlib_agent(
-        admin: User = Depends(admin_auth),
-        min_launcher_version: int = Form(default=None),
-        file: UploadFile | None = FormFile(accept=".jar", max_size=1024 * 1024),
-):
-    if file is None or file.size == 0:
-        prev_agent = await AuthlibAgent.filter().order_by("-id").first()
-        if prev_agent is None:
-            raise HTTPException(status_code=404, detail="There is no previous authlib agent available")
-        file_size = prev_agent.size
-        file_sha = prev_agent.sha1
-        file_id = prev_agent.file_id
-    else:
-        file.file.seek(0)
-        file_size = file.size
-        file_sha = sha1(file.file.read()).hexdigest().lower()
-        file_id = uuid4().hex
-
-        file.file.seek(0)
-        await S3.upload_object(S3_FILES_BUCKET, f"authlib-agent/{file_id}/{file_sha}", file.file)
-
-    await AuthlibAgent.create(
-        created_by=admin,
-        size=file_size,
-        sha1=file_sha,
-        min_launcher_version=min_launcher_version,
-        file_id=file_id,
-    )
-
-    return [c.FireEvent(event=GoToEvent(url=f"{PREFIX}/authlib-agent/?{time()}"))]
 
 
 @app.get("/{path:path}")

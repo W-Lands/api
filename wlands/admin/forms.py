@@ -66,3 +66,8 @@ class CreateUpdateForm(BaseModel):
 class CreateUpdateAutoForm(BaseModel):
     changelog: str
     file: UploadFile
+
+
+class UpdateAuthlibForm(BaseModel):
+    min_launcher_version: int
+    file: UploadFile | None = None
