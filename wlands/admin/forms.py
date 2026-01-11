@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import UploadFile, File
 from pydantic import BaseModel, EmailStr, SecretStr
 
-from wlands.models import UpdateOs, AnnouncementOs
+from wlands.models import UpdateOs, AnnouncementOs, ProfileFileLoc
 
 
 class LoginForm(BaseModel):
@@ -36,14 +36,14 @@ class ProfileAddressForm(BaseModel):
 
 
 class UploadProfileFilesForm(BaseModel):
-    dir_type: str
+    dir_type: ProfileFileLoc
     dir_prefix: str
     parent: str
     files: list[UploadFile]
 
 
 class RenameProfileFileForm(BaseModel):
-    dir_type: str
+    dir_type: ProfileFileLoc
     dir_prefix: str
     target_file: str
     target_dir: str
@@ -51,7 +51,7 @@ class RenameProfileFileForm(BaseModel):
 
 
 class DeleteProfileFileForm(BaseModel):
-    dir_type: str
+    dir_type: ProfileFileLoc
     dir_prefix: str
     target_file: str
     target_dir: str

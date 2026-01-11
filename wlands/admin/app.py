@@ -29,7 +29,6 @@ from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFi
     LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress
 
 # TODO: pagination in pages with tables
-# TODO: dont use "profile_dir" and "game_dir", use ProfileFileLoc
 
 app = FastAPI(openapi_url=None)
 templates_env = Environment(
@@ -44,9 +43,8 @@ templates_env.filters["format_datetime"] = format_datetime
 
 
 class ProfileRootDir(BaseModel):
-    type: str
     name: str
-    db_type: ProfileFileLoc
+    type: ProfileFileLoc
 
 
 class ProfileFileF(BaseModel):
@@ -66,16 +64,14 @@ class UnappliedProfileFile(BaseModel):
     deleted: bool = False
 
 
-profile_root_dirs: dict[str, ProfileRootDir] = {
-    "game_dir": ProfileRootDir(
-        type="game_dir",
+profile_root_dirs: dict[ProfileFileLoc, ProfileRootDir] = {
+    ProfileFileLoc.GAME: ProfileRootDir(
         name="<Game Directory>",
-        db_type=ProfileFileLoc.GAME,
+        type=ProfileFileLoc.GAME,
     ),
-    "profile_dir": ProfileRootDir(
-        type="profile_dir",
+    ProfileFileLoc.PROFILE: ProfileRootDir(
         name="<Profile Directory>",
-        db_type=ProfileFileLoc.PROFILE,
+        type=ProfileFileLoc.PROFILE,
     ),
 }
 
@@ -219,7 +215,7 @@ async def admin_profiles_page(request: Request, page: int = 1):
 
 async def _get_profile_files(profile: GameProfile, root: ProfileRootDir, prefix: str) -> list[ProfileFileF]:
     files = await ProfileFile.filter(
-        profile=profile, location=root.db_type, parent__startswith=prefix,
+        profile=profile, location=root.type, parent__startswith=prefix,
     ).order_by("-created_at")
 
     vdirs = {}
@@ -267,7 +263,7 @@ async def _get_profile_files(profile: GameProfile, root: ProfileRootDir, prefix:
 
 @app.get("/profiles/{profile_id}", response_class=HTMLResponse, dependencies=[AdminUserDep])
 async def admin_profile_info_page(
-        request: Request, profile_id: int, dir_type: str | None = None, dir_prefix: str = ".",
+        request: Request, profile_id: int, dir_type: ProfileFileLoc | None = None, dir_prefix: str = ".",
 ):
     profile = await GameProfile.get_or_none(id=profile_id)
 
@@ -406,7 +402,7 @@ async def admin_upload_profile_files(profile_id: int, root_path: RootPath, form:
             parent=os.path.dirname(name),
             profile=profile,
             created_at=now,
-            location=profile_root_dirs[form.dir_type].db_type,
+            location=form.dir_type,
             action=ProfileFileAction.DOWNLOAD,
             sha1=sha,
             size=file.size,
@@ -430,7 +426,6 @@ async def admin_rename_profile_files(profile_id: int, root_path: RootPath, form:
     if form.dir_type not in profile_root_dirs:
         return RedirectResponse(result_url, 303)
 
-    location = profile_root_dirs[form.dir_type].db_type
     new_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{form.dir_prefix}/{form.new_name}")), "/")
 
     files = []
@@ -438,7 +433,7 @@ async def admin_rename_profile_files(profile_id: int, root_path: RootPath, form:
     seen_files = set()
 
     if form.target_file:
-        file = await ProfileFile.get_or_none(profile=profile, location=location, id=int(form.target_file))
+        file = await ProfileFile.get_or_none(profile=profile, location=form.dir_type, id=int(form.target_file))
         search_name = file.name
         if file is not None:
             files = [file]
@@ -446,7 +441,7 @@ async def admin_rename_profile_files(profile_id: int, root_path: RootPath, form:
         parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{form.dir_prefix}/{form.target_dir}")), "/")
         search_name = parent_name
         files = await ProfileFile.filter(
-            profile=profile, location=location, parent__startswith=parent_name,
+            profile=profile, location=form.dir_type, parent__startswith=parent_name,
         ).order_by("-created_at")
     else:
         return RedirectResponse(result_url, 303)
@@ -478,20 +473,18 @@ async def admin_delete_profile_files(profile_id: int, root_path: RootPath, form:
     if form.dir_type not in profile_root_dirs:
         return RedirectResponse(result_url, 303)
 
-    location = profile_root_dirs[form.dir_type].db_type
-
     files = []
     files_to_create = []
     seen_files = set()
 
     if form.target_file:
-        file = await ProfileFile.get_or_none(profile=profile, location=location, id=int(form.target_file))
+        file = await ProfileFile.get_or_none(profile=profile, location=form.dir_type, id=int(form.target_file))
         if file is not None:
             files = [file]
     elif form.target_dir:
         parent_name = os.path.relpath(os.path.normpath(os.path.join("/", f"{form.dir_prefix}/{form.target_dir}")), "/")
         files = await ProfileFile.filter(
-            profile=profile, location=location, parent__startswith=parent_name
+            profile=profile, location=form.dir_type, parent__startswith=parent_name
         ).order_by("-created_at")
     else:
         return RedirectResponse(result_url, 303)
