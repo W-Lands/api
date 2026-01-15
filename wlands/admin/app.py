@@ -24,8 +24,8 @@ from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, Pro
     ToggleBanForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
-from wlands.launcher.manifest_models import VersionManifest
-from wlands.launcher.qtifw_update_xml import Updates
+from wlands.common.manifest_models import VersionManifest
+from wlands.common.qtifw_update_xml import Updates
 from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFile, ProfileFileLoc, ProfileFileAction, \
     LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress
 

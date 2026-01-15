@@ -1,7 +1,7 @@
 from uuid import UUID
 from pydantic import BaseModel
 
-from wlands.launcher.manifest_models import VersionManifest
+from wlands.common.manifest_models import VersionManifest
 from wlands.models import ProfileFileLoc
 
 
@@ -20,7 +20,6 @@ class UserInfoResponse(BaseModel):
     email: str
     nickname: str
     skin: str | None
-    cape: str | None
     mfa: bool
     admin: bool
 

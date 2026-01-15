@@ -5,9 +5,8 @@ from uuid import UUID
 from fastapi import Request, Depends
 from pytz import UTC
 
-from ..exceptions import ForbiddenException
-from ..models import User
-from ..models.game_user_session import GameSession
+from wlands.exceptions import ForbiddenException
+from wlands.models import User, GameSession
 
 
 async def get_session(request: Request, allow_expired: bool) -> GameSession:

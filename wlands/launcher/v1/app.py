@@ -16,14 +16,14 @@ from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSe
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
     LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo
-from .utils import Mfa, getImage
-from ..config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
-from ..exceptions import CustomBodyException
-from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, \
+from .utils import Mfa, get_image_from_b64
+from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
+from wlands.exceptions import CustomBodyException
+from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, \
     ProfileServerAddress
-from ..models.launcher_update import LauncherUpdate, UpdateOs
+from wlands.models import LauncherUpdate, UpdateOs
 
-router = APIRouter(prefix="/launcher")
+router = APIRouter()
 
 
 @router.post("/auth/login", response_model=AuthResponse)
@@ -35,8 +35,8 @@ async def login(data: LoginData):
     if not checkpw(data.password.encode(), user.password.encode()):
         raise CustomBodyException(400, {"errors": ["User with this email/password does not exists."]})
 
-    code = Mfa.getCode(user)
-    if code is not None and code != data.code:
+    codes = Mfa.get_codes(user)
+    if codes is not None and data.code not in codes:
         raise CustomBodyException(400, {"errors": ["Incorrect 2fa code."]})
 
     if user.banned:
@@ -88,7 +88,8 @@ async def check_session(session: AuthSessExpDep):
     }
 
 
-@router.get("/users/@me", response_model=UserInfoResponse)
+@router.get("/users/me", response_model=UserInfoResponse, deprecated=True)
+@router.get("/users/@me", response_model=UserInfoResponse, deprecated=True)
 async def get_me(user: AuthUserDep):
     return {
         "id": user.id,
@@ -108,7 +109,7 @@ def reencode(file: BytesIO) -> BytesIO:
 
 
 async def edit_texture(user: User, name: str, image: str) -> None:
-    if (texture := getImage(image)) is not None:
+    if (texture := get_image_from_b64(image)) is not None:
         with ThreadPoolExecutor() as pool:
             texture = await get_event_loop().run_in_executor(pool, reencode, texture)
         texture_id = uuid4()
@@ -120,7 +121,8 @@ async def edit_texture(user: User, name: str, image: str) -> None:
         await user.save(update_fields=[name])
 
 
-@router.patch("/users/@me", response_model=UserInfoResponse)
+@router.patch("/users/me", response_model=UserInfoResponse)
+@router.patch("/users/@me", response_model=UserInfoResponse, deprecated=True)
 async def edit_me(data: PatchUserData, user: AuthUserDep):
     await edit_texture(user, "skin", data.skin)
     return await get_me(user)

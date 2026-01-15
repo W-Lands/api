@@ -1,1 +1,8 @@
-from .app import router
+from fastapi import APIRouter
+
+from .v1 import router as v1_router
+
+router = APIRouter(prefix="/launcher")
+router.include_router(v1_router, prefix="/v1")
+
+router.include_router(v1_router, deprecated=True)
