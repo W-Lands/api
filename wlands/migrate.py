@@ -12,6 +12,7 @@ async def migrate():
         "connections": {"default": DATABASE_URL},
         "apps": {"models": {"models": ["wlands.models", "aerich.models"], "default_connection": "default"}},
     }, location=MIGRATIONS_DIR)
+    await command.fix_migrations()
     await command.init()
     if Path(MIGRATIONS_DIR).exists():
         await command.migrate()
