@@ -6,8 +6,10 @@ from Crypto.PublicKey import RSA
 from s3lite import Client
 
 if not exists("keys/private.pem"):
-    raise RuntimeError("Please create 2048 bit rsa keypair in \"keys\" directory. " +
-                       "Keys must be named \"private.pem\" and \"public.pem\"")
+    raise RuntimeError(
+        "Please create 2048 bit rsa keypair in \"keys\" directory. "
+        "Keys must be named \"private.pem\" and \"public.pem\""
+    )
 
 S3_GAME_BUCKET = "wlands"
 S3_FILES_BUCKET = "wlands-files"
@@ -28,3 +30,4 @@ with open("keys/public.pem", "r") as pubkey:
 
 INTERNAL_AUTH_TOKEN = environ.get("INTERNAL_AUTH_TOKEN", b64encode(urandom(64)).decode("utf8"))
 ROOT_PATH = environ.get("ROOT_PATH", "")
+DEBUG = environ.get("DEBUG", "").lower() in ("1", "true")

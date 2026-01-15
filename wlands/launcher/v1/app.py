@@ -88,7 +88,7 @@ async def check_session(session: AuthSessExpDep):
     }
 
 
-@router.get("/users/me", response_model=UserInfoResponse, deprecated=True)
+@router.get("/users/me", response_model=UserInfoResponse)
 @router.get("/users/@me", response_model=UserInfoResponse, deprecated=True)
 async def get_me(user: AuthUserDep):
     return {

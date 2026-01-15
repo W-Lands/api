@@ -8,7 +8,7 @@ from tortoise import generate_config
 from tortoise.contrib.fastapi import RegisterTortoise
 
 from . import minecraft, launcher, admin
-from .config import DATABASE_URL, S3, S3_FILES_BUCKET
+from .config import DATABASE_URL, S3, S3_FILES_BUCKET, DEBUG
 from .exceptions import CustomBodyException
 
 
@@ -41,7 +41,7 @@ async def migrate_and_connect_orm(app_: FastAPI):
 
 app = FastAPI(
     lifespan=migrate_and_connect_orm,
-    openapi_url=None,
+    openapi_url="/openapi.json" if DEBUG else None,
     root_path=environ.get("ROOT_PATH", ""),
 )
 app.include_router(minecraft.router)
