@@ -5,3 +5,5 @@ keys/*.pem
 ssl
 .env
 /migrations
+/coverage.xml
+/coverage.coverage

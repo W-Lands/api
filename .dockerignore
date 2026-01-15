@@ -4,3 +4,5 @@
 **/*.http
 **/ssl
 **/.env
+**/coverage.xml
+**/coverage.coverage

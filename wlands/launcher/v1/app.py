@@ -18,8 +18,7 @@ from .utils import Mfa, get_image_from_b64, image_worker, reencode_png
 from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
 from wlands.exceptions import CustomBodyException
 from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, \
-    AuthlibAgent, \
-    ProfileServerAddress, FailedLoginAttempt, FailType
+    AuthlibAgent, ProfileServerAddress, FailedLoginAttempt, FailType
 from wlands.models import LauncherUpdate, UpdateOs
 
 router = APIRouter()

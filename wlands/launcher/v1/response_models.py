@@ -5,6 +5,10 @@ from wlands.common.manifest_models import VersionManifest
 from wlands.models import ProfileFileLoc
 
 
+class ErrorsResponse(BaseModel):
+    errors: list[str]
+
+
 class AuthResponse(BaseModel):
     token: str
     refresh_token: str
