@@ -20,7 +20,8 @@ from wlands.admin.dependencies import AdminUserMaybe, AdminUser, AdminUserDep, \
     AdminSessionMaybe, RootPath
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
     ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
-    CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm, CreateAnnouncementForm, UpdateAnnouncementForm
+    CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm, CreateAnnouncementForm, UpdateAnnouncementForm, \
+    ToggleBanForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
 from wlands.config import S3, S3_FILES_BUCKET
 from wlands.launcher.manifest_models import VersionManifest
@@ -186,7 +187,9 @@ async def admin_user_info_page(request: Request, user_id: UUID):
 
 
 @router.post("/users/{user_id}/toggle-ban", response_class=HTMLResponse)
-async def admin_ban_unban_user(request: Request, user_id: UUID, admin: AdminUser, root_path: RootPath):
+async def admin_ban_unban_user(
+        request: Request, user_id: UUID, admin: AdminUser, root_path: RootPath, form: ToggleBanForm = Form(),
+):
     if (target := await User.get_or_none(id=user_id)) is None:
         return RedirectResponse(f"{root_path}{router.prefix}/users", 303)
     if target.id == admin.id or target.admin:
@@ -196,11 +199,12 @@ async def admin_ban_unban_user(request: Request, user_id: UUID, admin: AdminUser
         })
 
     target.banned = not target.banned
+    target.ban_reason = form.reason if target.banned else None
     if target.banned:
         await GameSession.filter(user=target).delete()
         await UserSession.filter(user=target).delete()
 
-    await target.save(update_fields=["banned"])
+    await target.save(update_fields=["banned", "ban_reason"])
 
     return RedirectResponse(f"{root_path}{router.prefix}/users/{target.id}", 303)
 

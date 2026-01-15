@@ -30,17 +30,20 @@ router = APIRouter(prefix="/launcher")
 async def login(data: LoginData):
     query = Q(email=data.email) if "@" in data.email else Q(nickname=data.email)
     if (user := await User.get_or_none(query)) is None:
-        raise CustomBodyException(400, {"email": ["User with this email/password does not exists."]})
+        raise CustomBodyException(400, {"errors": ["User with this email/password does not exists."]})
 
     if not checkpw(data.password.encode(), user.password.encode()):
-        raise CustomBodyException(400, {"email": ["User with this email/password does not exists."]})
+        raise CustomBodyException(400, {"errors": ["User with this email/password does not exists."]})
 
     code = Mfa.getCode(user)
     if code is not None and code != data.code:
-        raise CustomBodyException(400, {"code": ["Incorrect 2fa code."]})
+        raise CustomBodyException(400, {"errors": ["Incorrect 2fa code."]})
 
     if user.banned:
-        raise CustomBodyException(400, {"code": ["User is banned."]})
+        errors = ["User is banned."]
+        if user.ban_reason:
+            errors.append(f"Ban reason: {user.ban_reason}")
+        raise CustomBodyException(400, {"errors": errors})
 
     session = await GameSession.create(user=user)
 

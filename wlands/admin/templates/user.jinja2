@@ -18,6 +18,9 @@
         {{ macros.details_row("Email", user.email) }}
         {{ macros.details_row("Nickname", user.nickname) }}
         {{ macros.details_row("Banned", user.banned|format_bool) }}
+        {% if user.banned %}
+            {{ macros.details_row("Ban reason", user.ban_reason) }}
+        {% endif %}
         {{ macros.details_row("Admin", user.admin|format_bool) }}
         {{ macros.details_row("Has Mfa", user.mfa_key|format_bool) }}
         {{ macros.details_row("Created At", user.created_at|format_datetime) }}
@@ -36,7 +39,14 @@
                 </div>
                 <div class="modal-body">
                     <p class="">Are you sure you want to {{ ban_text|lower }} this user?</p>
-                    <form action="{{ user.id }}/toggle-ban" method="POST" id="ban-user-form"></form>
+                    <form action="{{ user.id }}/toggle-ban" method="POST" id="ban-user-form">
+                        {% if not user.banned %}
+                            <div class="mb-3">
+                                <label for="reason-input" class="form-label fw-bold">Reason</label>
+                                <input type="text" class="form-control" id="reason-input" name="reason" required>
+                            </div>
+                        {% endif %}
+                    </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

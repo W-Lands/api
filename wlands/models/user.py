@@ -22,6 +22,7 @@ class User(Model):
     skin: str | None = fields.UUIDField(null=True, default=None)
     mfa_key: str | None = fields.CharField(null=True, default=None, max_length=64)
     banned: bool = fields.BooleanField(default=False)
+    ban_reason: str | None = fields.TextField(null=True, default=None)
     admin: bool = fields.BooleanField(default=False)
     created_at: datetime = fields.DatetimeField(auto_now_add=True)
 

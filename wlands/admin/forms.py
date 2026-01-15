@@ -95,3 +95,7 @@ class UpdateAnnouncementForm(BaseModel):
     onetime: bool = False
     active_from: datetime
     active_to: datetime
+
+
+class ToggleBanForm(BaseModel):
+    reason: str | None = None
