@@ -28,6 +28,11 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-root --no-interaction --all-extras --with test
 
+      - name: Generate keypair
+        run: |
+          openssl genrsa -out keys/private.pem 2048
+          openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+
       - name: Run tests
         run: |
           poetry run pytest --disable-warnings tests
