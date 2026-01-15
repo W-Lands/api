@@ -1,9 +1,11 @@
 import hmac
 import struct
 from base64 import b32decode, b64decode
+from concurrent.futures.thread import ThreadPoolExecutor
 from io import BytesIO
 from time import time
 
+from PIL import Image
 from magic import from_buffer
 
 from wlands.models import User
@@ -52,3 +54,13 @@ def get_image_from_b64(image: str) -> BytesIO | None:
         return None
 
     return image
+
+
+image_worker = ThreadPoolExecutor(2, "Image Worker")
+
+
+def reencode_png(file: BytesIO) -> BytesIO:
+    img = Image.open(file)
+    out = BytesIO()
+    img.save(out, format="PNG")
+    return out

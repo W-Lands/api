@@ -1,11 +1,9 @@
-from asyncio import get_event_loop
-from concurrent.futures.thread import ThreadPoolExecutor
+from asyncio import get_running_loop
 from datetime import datetime, timezone
 from io import BytesIO
 from time import time
 from uuid import uuid4
 
-from PIL import Image
 from bcrypt import checkpw
 from fastapi import Depends, UploadFile, APIRouter
 from pytz import UTC
@@ -16,7 +14,7 @@ from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSe
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
     LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo
-from .utils import Mfa, get_image_from_b64
+from .utils import Mfa, get_image_from_b64, image_worker, reencode_png
 from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
 from wlands.exceptions import CustomBodyException
 from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, \
@@ -101,30 +99,18 @@ async def get_me(user: AuthUserDep):
     }
 
 
-def reencode(file: BytesIO) -> BytesIO:
-    img = Image.open(file)
-    out = BytesIO()
-    img.save(out, format="PNG")
-    return out
-
-
-async def edit_texture(user: User, name: str, image: str) -> None:
-    if (texture := get_image_from_b64(image)) is not None:
-        with ThreadPoolExecutor() as pool:
-            texture = await get_event_loop().run_in_executor(pool, reencode, texture)
-        texture_id = uuid4()
-        await S3.upload_object("wlands", f"{name}s/{user.id}/{texture_id}.png", texture)
-        setattr(user, name, texture_id)
-        await user.save(update_fields=[name])
-    elif image == "":
-        setattr(user, name, None)
-        await user.save(update_fields=[name])
-
-
 @router.patch("/users/me", response_model=UserInfoResponse)
 @router.patch("/users/@me", response_model=UserInfoResponse, deprecated=True)
 async def edit_me(data: PatchUserData, user: AuthUserDep):
-    await edit_texture(user, "skin", data.skin)
+    if (texture := get_image_from_b64(data.skin)) is not None:
+        texture = await get_running_loop().run_in_executor(image_worker, reencode_png, texture)
+        user.skin = uuid4()
+        await S3.upload_object("wlands", f"skins/{user.id}/{user.skin}.png", texture)
+        await user.save(update_fields=["skin"])
+    elif data.skin == "":
+        user.skin = None
+        await user.save(update_fields=["skin"])
+
     return await get_me(user)
 
 
