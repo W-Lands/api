@@ -3,7 +3,7 @@ from os import environ
 
 from fastapi import FastAPI, Request
 from httpx import RemoteProtocolError
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 from tortoise import generate_config
 from tortoise.contrib.fastapi import RegisterTortoise
 
@@ -39,17 +39,27 @@ async def migrate_and_connect_orm(app_: FastAPI):
         yield
 
 
-app = FastAPI(lifespan=migrate_and_connect_orm, openapi_url=None)
-app.mount("/minecraft", minecraft.app)
-app.mount("/launcher", launcher.app)
-app.mount("/admin", admin.app)
+app = FastAPI(
+    lifespan=migrate_and_connect_orm,
+    openapi_url=None,
+    root_path=environ.get("ROOT_PATH", ""),
+)
+app.include_router(minecraft.router)
+app.include_router(launcher.router)
+app.include_router(admin.router)
 
 
 @app.exception_handler(CustomBodyException)
-@minecraft.app.exception_handler(CustomBodyException)
-@launcher.app.exception_handler(CustomBodyException)
 async def custom_exception_handler(request: Request, exc: CustomBodyException):
     return JSONResponse(status_code=exc.code, content=exc.body)
+
+
+@app.exception_handler(admin.NotAuthorized)
+async def not_authorized_handler(request: Request, exc: admin.NotAuthorized):
+    root_path = request.scope.get("root_path")
+    resp = RedirectResponse(f"{root_path}{admin.router.prefix}/login")
+    resp.delete_cookie("auth_token")
+    return resp
 
 
 @app.get("/health")

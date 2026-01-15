@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from PIL import Image
 from bcrypt import checkpw
-from fastapi import FastAPI, Depends, UploadFile
+from fastapi import Depends, UploadFile, APIRouter
 from pytz import UTC
 from starlette.responses import RedirectResponse
 from tortoise.expressions import Q
@@ -23,10 +23,10 @@ from ..models import User, GameSession, GameProfile, ProfileFile, LauncherAnnoun
     ProfileServerAddress
 from ..models.launcher_update import LauncherUpdate, UpdateOs
 
-app = FastAPI(openapi_url=None)
+router = APIRouter(prefix="/launcher")
 
 
-@app.post("/auth/login", response_model=AuthResponse)
+@router.post("/auth/login", response_model=AuthResponse)
 async def login(data: LoginData):
     query = Q(email=data.email) if "@" in data.email else Q(nickname=data.email)
     if (user := await User.get_or_none(query)) is None:
@@ -51,7 +51,7 @@ async def login(data: LoginData):
     }
 
 
-@app.post("/auth/refresh", response_model=AuthResponse)
+@router.post("/auth/refresh", response_model=AuthResponse)
 async def refresh_session(data: TokenRefreshData, session: GameSession = Depends(sess_auth_expired)):
     user = session.user
 
@@ -73,19 +73,19 @@ async def refresh_session(data: TokenRefreshData, session: GameSession = Depends
     }
 
 
-@app.post("/auth/logout", status_code=204)
+@router.post("/auth/logout", status_code=204)
 async def logout(session: AuthSessExpDep):
     await session.delete()
 
 
-@app.get("/auth/verify", response_model=SessionExpirationResponse)
+@router.get("/auth/verify", response_model=SessionExpirationResponse)
 async def check_session(session: AuthSessExpDep):
     return {
         "expired": session.expired
     }
 
 
-@app.get("/users/@me", response_model=UserInfoResponse)
+@router.get("/users/@me", response_model=UserInfoResponse)
 async def get_me(user: AuthUserDep):
     return {
         "id": user.id,
@@ -118,7 +118,7 @@ async def edit_texture(user: User, name: str, image: str) -> None:
         await user.save(update_fields=[name])
 
 
-@app.patch("/users/@me", response_model=UserInfoResponse)
+@router.patch("/users/@me", response_model=UserInfoResponse)
 async def edit_me(data: PatchUserData, user: AuthUserDep):
     await edit_texture(user, "skin", data.skin)
     await edit_texture(user, "cape", data.cape)
@@ -126,7 +126,7 @@ async def edit_me(data: PatchUserData, user: AuthUserDep):
     return await get_me(user)
 
 
-@app.post("/logs", status_code=204)
+@router.post("/logs", status_code=204)
 async def upload_logs(log: UploadFile, user: AuthUserDep, session: str | None = None):
     date = datetime.now(UTC).strftime("%d%m%Y")
     if log.size > 1024 * 1024 * 16:
@@ -139,7 +139,7 @@ async def upload_logs(log: UploadFile, user: AuthUserDep, session: str | None = 
     await S3.upload_object("wlands", f"logs/{date}/{user.id}/{session}/{int(time() % 86400)}.txt", file)
 
 
-@app.get("/profiles", response_model=list[ProfileInfo])
+@router.get("/profiles", response_model=list[ProfileInfo])
 async def get_profiles(user: AuthUserOptDep, with_manifest: bool = True, only_public: bool = True):
     only_public = only_public and user is not None and user.admin
     profiles_q = Q(public=True) if only_public else Q()
@@ -152,7 +152,7 @@ async def get_profiles(user: AuthUserOptDep, with_manifest: bool = True, only_pu
     ]
 
 
-@app.get("/profiles/{profile_id}/files", response_model=list[ProfileFileInfo])
+@router.get("/profiles/{profile_id}/files", response_model=list[ProfileFileInfo])
 async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 0):
     if (profile := await GameProfile.get_or_none(id=profile_id)) is None:
         raise CustomBodyException(404, {"profile_id": ["Unknown profile."]})
@@ -175,13 +175,13 @@ async def get_profile_files(profile_id: int, min_date: int = 0, max_date: int = 
     ]
 
 
-@app.get("/updates/latest", response_model=list[LauncherUpdateInfo])
+@router.get("/updates/latest", response_model=list[LauncherUpdateInfo])
 async def get_launcher_latest_update(os: UpdateOs):
     version = await LauncherUpdate.filter(public=True, os=os).last()
     return [version.to_json()] if version else []
 
 
-@app.get("/updates/latest/repo/{os}/{path:path}")
+@router.get("/updates/latest/repo/{os}/{path:path}")
 async def get_launcher_latest_update_redirect(os: UpdateOs, path: str):
     update = await LauncherUpdate.filter(public=True, os=os).last()
 
@@ -193,7 +193,7 @@ async def get_launcher_latest_update_redirect(os: UpdateOs, path: str):
     return RedirectResponse(url)
 
 
-@app.get("/announcements", response_model=list[LauncherAnnouncementInfo])
+@router.get("/announcements", response_model=list[LauncherAnnouncementInfo])
 async def get_launcher_announcements(os: AnnouncementOs = AnnouncementOs.ALL):
     now = datetime.now(timezone.utc)
 
@@ -207,7 +207,7 @@ async def get_launcher_announcements(os: AnnouncementOs = AnnouncementOs.ALL):
     ]
 
 
-@app.get("/authlib-agent", response_model=AuthlibAgentResponse)
+@router.get("/authlib-agent", response_model=AuthlibAgentResponse)
 async def get_authlib_agent():
     agent = await AuthlibAgent.filter().order_by("-id").first()
     if agent is not None:
@@ -223,7 +223,7 @@ async def get_authlib_agent():
     }
 
 
-@app.get("/profiles/{profile_id}/ips", response_model=list[ProfileIpInfo])
+@router.get("/profiles/{profile_id}/ips", response_model=list[ProfileIpInfo])
 async def get_profile_ips(profile_id: int, user: AuthUserOptDep):
     if user is None:
         return []

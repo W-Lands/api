@@ -6,7 +6,7 @@ from uuid import UUID
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
-from fastapi import FastAPI, Depends, Response
+from fastapi import APIRouter, Depends, Response
 
 from .dependencies import mc_user_auth, mc_user_auth_data
 from .schemas import JoinRequestData, ReportRequest
@@ -14,10 +14,10 @@ from ..config import YGGDRASIL_PUBLIC_STR
 from ..exceptions import BadRequestException, ForbiddenException
 from ..models import PlayerKeyPair, GameJoinRequest, User, ReportMessage, ReportType, PlayerReport
 
-app = FastAPI(openapi_url=None)
+router = APIRouter(prefix="/minecraft")
 
 
-@app.get("/services/player/attributes")
+@router.get("/services/player/attributes")
 async def player_attributes():
     return {
         "privileges": {
@@ -51,7 +51,7 @@ async def player_attributes():
     }
 
 
-@app.post("/services/player/certificates")
+@router.post("/services/player/certificates")
 async def player_certificates(user: User = Depends(mc_user_auth)):
     if (keypair := await PlayerKeyPair.get_or_none(user=user)) is not None and keypair.can_be_refreshed:
         await keypair.delete()
@@ -83,7 +83,7 @@ async def player_certificates(user: User = Depends(mc_user_auth)):
     }
 
 
-@app.get("/services/privacy/blocklist")
+@router.get("/services/privacy/blocklist")
 async def blocklist():
     return {
         "blockedProfiles": []
@@ -98,7 +98,7 @@ def ltob(value: int) -> bytes:
     return value.to_bytes(8, "big", signed=True)
 
 
-@app.post("/services/player/report", status_code=204)
+@router.post("/services/player/report", status_code=204)
 async def player_report_post(data: ReportRequest, user: User = Depends(mc_user_auth)):
     reported_user = await User.get_or_none(id=data.report.entity.profile_id)
     if reported_user is None:
@@ -179,7 +179,7 @@ async def player_report_post(data: ReportRequest, user: User = Depends(mc_user_a
         await ReportMessage.bulk_create(messages)
 
 
-@app.post("/session/session/minecraft/join")
+@router.post("/session/session/minecraft/join")
 async def mc_join(data: JoinRequestData, user: User = Depends(mc_user_auth_data)):
     if not data.selectedProfile or not data.serverId:
         raise BadRequestException("One or more required fields was missing.")
@@ -190,7 +190,7 @@ async def mc_join(data: JoinRequestData, user: User = Depends(mc_user_auth_data)
     return Response()
 
 
-@app.get("/session/session/minecraft/hasJoined")
+@router.get("/session/session/minecraft/hasJoined")
 async def mc_has_joined(serverId: str | None, username: str | None):
     if not serverId or not username:
         raise BadRequestException("One or more required fields was missing.")
@@ -207,7 +207,7 @@ async def mc_has_joined(serverId: str | None, username: str | None):
     }
 
 
-@app.get("/session/session/minecraft/profile/{user_id}")
+@router.get("/session/session/minecraft/profile/{user_id}")
 async def mc_profile(user_id: UUID, unsigned: bool = False):
     if (user := await User.get_or_none(id=user_id)) is None:
         raise BadRequestException("Profile does not exist.")
@@ -219,7 +219,7 @@ async def mc_profile(user_id: UUID, unsigned: bool = False):
     }
 
 
-@app.get("/services/publickeys")
+@router.get("/services/publickeys")
 async def yggdrasil_keys():
     return {
         "profilePropertyKeys": [{"publicKey": YGGDRASIL_PUBLIC_STR}],
@@ -227,6 +227,6 @@ async def yggdrasil_keys():
     }
 
 
-@app.post("/services/events", status_code=204)
+@router.post("/services/events", status_code=204)
 async def collect_telemetry():
     ...
