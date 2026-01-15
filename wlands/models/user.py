@@ -10,7 +10,8 @@ from Crypto.Hash import SHA1
 from Crypto.Signature import PKCS1_v1_5
 from tortoise import fields, Model
 
-from ..config import S3, YGGDRASIL_PRIVATE_KEY
+from .. import models
+from ..config import S3_PUBLIC, YGGDRASIL_PRIVATE_KEY
 
 
 class User(Model):
@@ -19,7 +20,6 @@ class User(Model):
     nickname: str = fields.CharField(max_length=32, unique=True)
     password: str = fields.TextField()
     skin: str | None = fields.UUIDField(null=True, default=None)
-    cape: str | None = fields.UUIDField(null=True, default=None)
     mfa_key: str | None = fields.CharField(null=True, default=None, max_length=64)
     banned: bool = fields.BooleanField(default=False)
     admin: bool = fields.BooleanField(default=False)
@@ -29,23 +29,17 @@ class User(Model):
     def skin_url(self) -> str | None:
         if self.skin is None:
             return None
-        return S3.share("wlands", f"skins/{self.id}/{self.skin}.png")
+        return S3_PUBLIC.share("wlands", f"skins/{self.id}/{self.skin}.png")
 
-    @property
-    def cape_url(self) -> str | None:
-        if self.cape is None:
-            return None
-        return S3.share("wlands", f"capes/{self.id}/{self.cape}.png")
-
-    def properties(self, signed: bool = False) -> list[dict[str, str]]:
-        if not self.skin_url and not self.cape_url:
+    def properties(self, signed: bool = False, cape: models.Cape | None = None) -> list[dict[str, str]]:
+        if not self.skin_url and not cape:
             return []
 
         actual_textures = {}
         if self.skin_url:
             actual_textures["SKIN"] = {"url": self.skin_url}
-        if self.cape_url:
-            actual_textures["CAPE"] = {"url": self.cape_url}
+        if cape:
+            actual_textures["CAPE"] = {"url": cape.url}
 
         textures = {
             "name": "textures",
@@ -67,5 +61,6 @@ class User(Model):
 
         return [textures]
 
-    def has_mfa(self) -> bool:
-        return self.mfa_key is not None
+    async def get_cape(self) -> models.Cape | None:
+        return await models.Cape.get_or_none(usercape__user=self, usercape__selected=True)
+

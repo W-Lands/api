@@ -60,7 +60,6 @@ async def get_user(user_id: UUID, authorization: str | None = Header(default=Non
         "email": user.email,
         "nickname": user.nickname,
         "skin": user.skin,
-        "cape": user.cape,
         "mfa": user.mfa_key is not None,
         "banned": user.banned,
     }
@@ -82,14 +81,12 @@ async def edit_user(user_id: UUID, data: EditUser, authorization: str | None = H
         await user.save(update_fields=["password"])
 
     await edit_texture(user, "skin", data.skin)
-    await edit_texture(user, "cape", data.cape)
 
     return {
         "id": user.id,
         "email": user.email,
         "login": user.nickname,
         "skin": user.skin_url,
-        "cape": user.cape_url,
         "mfa": user.mfa_key is not None,
         "banned": user.banned,
     }

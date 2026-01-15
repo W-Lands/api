@@ -203,7 +203,7 @@ async def mc_has_joined(serverId: str | None, username: str | None):
     return {
         "id": str(join_request.user.id),
         "name": str(join_request.user.nickname),
-        "properties": join_request.user.properties(True)
+        "properties": join_request.user.properties(True, await join_request.user.get_cape())
     }
 
 
@@ -215,7 +215,7 @@ async def mc_profile(user_id: UUID, unsigned: bool = False):
     return {
         "id": user.id.hex.replace("-", ""),
         "name": user.nickname,
-        "properties": user.properties(not unsigned)
+        "properties": user.properties(not unsigned, await user.get_cape())
     }
 
 

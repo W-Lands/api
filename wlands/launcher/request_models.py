@@ -18,9 +18,8 @@ class TokenRefreshData(BaseModel):
 
 class PatchUserData(BaseModel):
     skin: str | None = Field(default=None)
-    cape: str | None = Field(default=None)
 
-    @field_validator("skin", "cape")
+    @field_validator("skin")
     def validate_skin_cape(cls, value: str | None, info: ValidationInfo) -> str | None:
         if value is None or value == "":
             return value
@@ -29,9 +28,7 @@ class PatchUserData(BaseModel):
             raise CustomBodyException(400, {info.field_name: ["Invalid image."]})
 
         image = Image.open(image)
-        if info.field_name == "cape" and image.size != (64, 32):
-            raise CustomBodyException(400, {info.field_name: ["Invalid image."]})
-        elif info.field_name == "skin" and any(dim != 64 for dim in image.size):
+        if any(dim != 64 for dim in image.size):
             raise CustomBodyException(400, {info.field_name: ["Invalid image."]})
 
         return value

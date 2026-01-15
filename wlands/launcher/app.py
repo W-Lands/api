@@ -92,7 +92,6 @@ async def get_me(user: AuthUserDep):
         "email": user.email,
         "nickname": user.nickname,
         "skin": user.skin_url,
-        "cape": user.cape_url,
         "mfa": user.mfa_key is not None,
         "admin": user.admin,
     }
@@ -121,8 +120,6 @@ async def edit_texture(user: User, name: str, image: str) -> None:
 @router.patch("/users/@me", response_model=UserInfoResponse)
 async def edit_me(data: PatchUserData, user: AuthUserDep):
     await edit_texture(user, "skin", data.skin)
-    await edit_texture(user, "cape", data.cape)
-
     return await get_me(user)
 
 
