@@ -14,3 +14,4 @@ from .profile_server_address import ProfileServerAddress
 from .reported_message import ReportMessage
 from .cape import Cape
 from .usercape import UserCape
+from .failed_login_attempt import FailedLoginAttempt, FailType

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from os import urandom
 from uuid import UUID, uuid4
 
@@ -14,7 +14,7 @@ def random_hex_64b() -> str:
 
 
 def expires_after_7d():
-    return datetime.now() + timedelta(days=7)
+    return datetime.now(UTC) + timedelta(days=7)
 
 
 class GameSession(Model):

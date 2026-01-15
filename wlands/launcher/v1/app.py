@@ -1,5 +1,5 @@
 from asyncio import get_running_loop
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from time import time
 from uuid import uuid4
@@ -17,11 +17,63 @@ from .response_models import AuthResponse, SessionExpirationResponse, UserInfoRe
 from .utils import Mfa, get_image_from_b64, image_worker, reencode_png
 from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
 from wlands.exceptions import CustomBodyException
-from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, \
-    ProfileServerAddress
+from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, \
+    AuthlibAgent, \
+    ProfileServerAddress, FailedLoginAttempt, FailType
 from wlands.models import LauncherUpdate, UpdateOs
 
 router = APIRouter()
+
+
+max_attempts_per_time_window_password = [
+    (timedelta(minutes=10), 5),
+    (timedelta(minutes=30), 10),
+    (timedelta(hours=1), 15),
+    (timedelta(hours=4), 25),
+    (timedelta(hours=6), 30),
+    (timedelta(hours=12), 40),
+    (timedelta(days=1), 50),
+]
+
+max_attempts_per_time_window_mfa = [
+    (timedelta(minutes=10), 3),
+    (timedelta(minutes=30), 5),
+    (timedelta(hours=4), 10),
+    (timedelta(hours=12), 15),
+    (timedelta(days=1), 20),
+]
+
+
+async def _check_login_attempts_exceeded(user: User) -> bool:
+    now = datetime.now(UTC)
+
+    check_mfa_q = Q() if user.mfa_key else Q(type__not=FailType.MFA)
+    failed_attempts = await FailedLoginAttempt.filter(
+        check_mfa_q, user=user, timestamp__gte=now - timedelta(days=1),
+    ).order_by("-timestamp").values_list("type", "timestamp")
+
+    failed_password = 0
+    failed_mfa = 0
+
+    for fail_type, timestamp in failed_attempts:
+        delta = now - timestamp
+
+        if fail_type is FailType.PASSWORD:
+            failed_password += 1
+            failed = failed_password
+            checks = max_attempts_per_time_window_password
+        elif fail_type is FailType.MFA:
+            failed_mfa += 1
+            failed = failed_mfa
+            checks = max_attempts_per_time_window_mfa
+        else:
+            continue
+
+        for check_delta, attempts in checks:
+            if delta < check_delta and failed >= attempts:
+                return True
+
+    return False
 
 
 @router.post("/auth/login", response_model=AuthResponse)
@@ -30,13 +82,20 @@ async def login(data: LoginData):
     if (user := await User.get_or_none(query)) is None:
         raise CustomBodyException(400, {"errors": ["User with this email/password does not exists."]})
 
+    if await _check_login_attempts_exceeded(user):
+        raise CustomBodyException(400, {"errors": ["Exceeded maximum number of login requests."]})
+
+    # TODO: check password in thread pool executor?
     if not checkpw(data.password.encode(), user.password.encode()):
+        await FailedLoginAttempt.create(user=user, type=FailType.PASSWORD)
         raise CustomBodyException(400, {"errors": ["User with this email/password does not exists."]})
 
     codes = Mfa.get_codes(user)
     if codes is not None and data.code not in codes:
+        await FailedLoginAttempt.create(user=user, type=FailType.MFA)
         raise CustomBodyException(400, {"errors": ["Incorrect 2fa code."]})
 
+    # TODO: check if user is banned before checking password and/or mfa code?
     if user.banned:
         errors = ["User is banned."]
         if user.ban_reason:
