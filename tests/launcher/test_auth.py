@@ -147,3 +147,30 @@ async def test_auth_user_banned(client: AsyncClient, email: str, login_email: st
     assert "is banned" in resp.errors[0]
     if ban_reason:
         assert ban_reason in resp.errors[1]
+
+
+@param_login
+@pytest.mark.asyncio
+async def test_auth_failed_attempts_not_exceeded(client: AsyncClient, email: str, login_email: str) -> None:
+    await User.create(
+        email=email,
+        nickname=email.split("@")[0],
+        password=TEST_PASSWORD_HASH,
+    )
+
+    for _ in range(max_attempts_per_time_window_password[0][1] - 1):
+        response = await client.post("/launcher/v1/auth/login", json=LoginData(
+            email=login_email, password=f"_{TEST_PASSWORD}",
+        ).model_dump())
+        assert response.status_code == 400
+        resp = ErrorsResponse(**response.json())
+        assert len(resp.errors) == 1
+        assert "does not exists" in resp.errors[0]
+
+    response = await client.post("/launcher/v1/auth/login", json=LoginData(
+        email=login_email, password=TEST_PASSWORD,
+    ).model_dump())
+    assert response.status_code == 200
+    resp = AuthResponse(**response.json())
+    assert resp.token
+    assert resp.refresh_token
