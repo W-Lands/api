@@ -9,16 +9,17 @@ from fastapi import Depends, UploadFile, APIRouter
 from pytz import UTC
 from starlette.responses import RedirectResponse
 from tortoise.expressions import Q
+from tortoise.transactions import in_transaction
 
 from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
-    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo
+    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo
 from .utils import Mfa, get_image_from_b64, image_worker, reencode_png
 from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
 from wlands.exceptions import CustomBodyException
 from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, \
-    AuthlibAgent, ProfileServerAddress, FailedLoginAttempt, FailType
+    AuthlibAgent, ProfileServerAddress, FailedLoginAttempt, FailType, Cape, UserCape
 from wlands.models import LauncherUpdate, UpdateOs
 
 router = APIRouter()
@@ -147,27 +148,55 @@ async def check_session(session: AuthSessExpDep):
 @router.get("/users/me", response_model=UserInfoResponse)
 @router.get("/users/@me", response_model=UserInfoResponse, deprecated=True)
 async def get_me(user: AuthUserDep):
+    cape = await user.get_cape()
     return {
         "id": user.id,
         "email": user.email,
         "nickname": user.nickname,
         "skin": user.skin_url,
+        "cape": cape.to_json(True, True) if cape is not None else None,
         "mfa": user.mfa_key is not None,
         "admin": user.admin,
     }
 
 
+async def _edit_cape(user: User, new_cape_id: int) -> None:
+    if new_cape_id == 0:
+        await UserCape.filter(user=user, selected=True).update(selected=False)
+        return
+
+    old_cape = await UserCape.get_or_none(user=user, selected=True)
+    if old_cape.cape_id == new_cape_id:
+        return
+
+    new_cape = await UserCape.get_or_none(user=user, cape__id=new_cape_id)
+    if new_cape is None:
+        raise CustomBodyException(400, {"cape_id": ["This cape is not available for you."]})
+
+    old_cape.selected = False
+    new_cape.selected = True
+    await UserCape.bulk_update([old_cape, new_cape], fields=["selected"])
+
+
 @router.patch("/users/me", response_model=UserInfoResponse)
 @router.patch("/users/@me", response_model=UserInfoResponse, deprecated=True)
 async def edit_me(data: PatchUserData, user: AuthUserDep):
+    save_fields = []
     if (texture := get_image_from_b64(data.skin)) is not None:
         texture = await get_running_loop().run_in_executor(image_worker, reencode_png, texture)
         user.skin = uuid4()
         await S3.upload_object("wlands", f"skins/{user.id}/{user.skin}.png", texture)
-        await user.save(update_fields=["skin"])
+        save_fields.append("skin")
     elif data.skin == "":
         user.skin = None
-        await user.save(update_fields=["skin"])
+        save_fields.append("skin")
+
+    async with in_transaction():
+        if save_fields:
+            await user.save(update_fields=save_fields)
+
+        if data.cape_id is not None:
+            await _edit_cape(user, data.cape_id)
 
     return await get_me(user)
 
@@ -280,4 +309,24 @@ async def get_profile_ips(profile_id: int, user: AuthUserOptDep):
     return [
         ip.to_json()
         for ip in await ProfileServerAddress.filter(profile=profile)
+    ]
+
+
+@router.get("/capes", response_model=list[CapeInfo])
+async def get_capes(user: AuthUserDep):
+    user_cape_ids = set()
+    user_cape_sel = None
+    for cape_id, selected in await UserCape.filter(user=user).values_list("cape__id", "selected"):
+        user_cape_ids.add(cape_id)
+        if selected:
+            user_cape_sel = cape_id
+
+    capes_query = Cape.filter(Q(public=True) | Q(public=False, id__in=user_cape_ids))
+
+    return [
+        cape.to_json(
+            available=cape.id in user_cape_ids,
+            selected=cape.id == user_cape_sel,
+        )
+        for cape in await capes_query.order_by("id")
     ]

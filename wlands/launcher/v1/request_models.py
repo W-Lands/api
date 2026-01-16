@@ -18,6 +18,7 @@ class TokenRefreshData(BaseModel):
 
 class PatchUserData(BaseModel):
     skin: str | None = Field(default=None)
+    cape_id: int | None = Field(default=None)
 
     @field_validator("skin")
     def validate_skin(cls, value: str | None, info: ValidationInfo) -> str | None:

@@ -18,3 +18,19 @@ class Cape(Model):
     @property
     def url(self) -> str:
         return S3_PUBLIC.share(S3_GAME_BUCKET, f"capes/{self.id}/{self.file_id.hex}.png")
+
+    async def to_json(self, available: bool, selected: bool) -> dict:
+        info_available = (self.public and self.info_public) or available
+
+        return {
+            "id": self.id,
+            "name": self.name if info_available else "???",
+            "description": self.description if info_available else "???",
+            # TODO: use some fallback cape url?
+            "url": self.url if info_available else "http://unreachable.local",
+            "public": self.public,
+            "info_public": self.info_public,
+            "created_at": self.created_at,
+            "selected": selected,
+            "available": available,
+        }

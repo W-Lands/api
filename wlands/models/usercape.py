@@ -11,6 +11,9 @@ class UserCape(Model):
     cape: models.Cape = fields.ForeignKeyField("models.Cape")
     selected: bool = fields.BooleanField(default=False)
 
+    user_id: int
+    cape_id: int
+
     class Meta:
         unique_together = (
             ("user", "cape"),

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from uuid import UUID
 from pydantic import BaseModel
 
@@ -24,6 +26,7 @@ class UserInfoResponse(BaseModel):
     email: str
     nickname: str
     skin: str | None
+    cape: CapeInfo | None
     mfa: bool
     admin: bool
 
@@ -84,3 +87,15 @@ class ProfileIpInfo(BaseModel):
     id: int
     name: str
     ip: str
+
+
+class CapeInfo(BaseModel):
+    id: int
+    name: str
+    description: str
+    url: UUID
+    public: bool
+    info_public: bool
+    created_at: int
+    selected: bool
+    available: bool
