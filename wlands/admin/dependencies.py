@@ -58,14 +58,8 @@ async def admin_opt_auth_session(auth_token: str = Cookie(default="")) -> UserSe
         return None
 
 
-async def root_path_dep(request: Request) -> str:
-    return request.scope.get("root_path")
-
-
 AdminSessionMaybe = Annotated[UserSession | None, Depends(admin_opt_auth_session)]
 AdminUserDep = Depends(admin_auth)
 AdminUserMaybeDep = Depends(admin_opt_auth)
 AdminUser = Annotated[User | None, AdminUserDep]
 AdminUserMaybe = Annotated[User | None, AdminUserMaybeDep]
-
-RootPath = Annotated[str, Depends(root_path_dep)]

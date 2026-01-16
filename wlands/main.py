@@ -56,8 +56,7 @@ async def custom_exception_handler(request: Request, exc: CustomBodyException):
 
 @app.exception_handler(admin.NotAuthorized)
 async def not_authorized_handler(request: Request, exc: admin.NotAuthorized):
-    root_path = request.scope.get("root_path")
-    resp = RedirectResponse(f"{root_path}{admin.router.prefix}/login")
+    resp = RedirectResponse(request.url_for("admin_login_page"), 303)
     resp.delete_cookie("auth_token")
     return resp
 
