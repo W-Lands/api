@@ -15,19 +15,23 @@ from pytz import UTC
 from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.templating import Jinja2Templates
 from tortoise.expressions import Q
+from tortoise.transactions import in_transaction
 
 from wlands.admin.dependencies import AdminUserMaybe, AdminUser, AdminUserDep, \
     AdminSessionMaybe, RootPath
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
     ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
     CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm, CreateAnnouncementForm, UpdateAnnouncementForm, \
-    ToggleBanForm
+    ToggleBanForm, CreateCapeForm, CapeInfoForm
 from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
-from wlands.config import S3, S3_FILES_BUCKET
+from wlands.config import S3, S3_FILES_BUCKET, S3_GAME_BUCKET
 from wlands.common.manifest_models import VersionManifest
 from wlands.common.qtifw_update_xml import Updates
 from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFile, ProfileFileLoc, ProfileFileAction, \
-    LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress
+    LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress, Cape
+
+
+# TODO: use Request.url_for instead of root_path
 
 
 router = APIRouter(prefix="/admin")
@@ -80,12 +84,15 @@ class Pagination:
             if 1 <= p <= self.total_pages
         ]
 
+        if not self.pages:
+            self.pages.append(1)
+
         if self.pages[0] != 1:
             if self.pages[0] != 2:
                 self.pages.insert(0, None)
             self.pages.insert(0, 1)
 
-        if self.pages[-1] != self.total_pages:
+        if self.total_pages > 0 and self.pages[-1] != self.total_pages:
             if self.pages[-1] != (self.total_pages - 1):
                 self.pages.append(None)
             self.pages.append(self.total_pages)
@@ -134,6 +141,8 @@ async def admin_login(user: AdminUserMaybe, request: Request, root_path: RootPat
         return error_resp
     if not checkpw(form.password.get_secret_value().encode(), user.password.encode()):
         return error_resp
+
+    # TODO: also check mfa
 
     session = await UserSession.create(user=user)
 
@@ -853,3 +862,57 @@ async def create_authlib_agent(admin: AdminUser, root_path: RootPath, form: Upda
     )
 
     return RedirectResponse(f"{root_path}{router.prefix}/authlib-agent", 303)
+
+
+@router.get("/capes", response_class=HTMLResponse, dependencies=[AdminUserDep])
+async def admin_capes_page(request: Request, page: int = 1):
+    PAGE_SIZE = 25
+
+    capes = await Cape.filter().offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE).order_by("id")
+    total = await Cape.all().count()
+
+    return templates.TemplateResponse(request=request, name="capes.jinja2", context={
+        "capes": capes,
+        "pagination": Pagination(page, PAGE_SIZE, total),
+    })
+
+
+@router.post("/capes", response_class=HTMLResponse, dependencies=[AdminUserDep])
+async def admin_create_cape(request: Request, form: CreateCapeForm = Form()):
+    async with in_transaction():
+        file_id = uuid4().hex
+        new_cape = await Cape.create(
+            name=form.name,
+            description=form.description,
+            public=form.public,
+            info_public=form.info_public,
+            file_id=file_id,
+        )
+        await form.file.seek(0)
+        await S3.upload_object(S3_GAME_BUCKET, f"capes/{new_cape.id}/{file_id}.png", form.file.file)
+
+    return RedirectResponse(request.url_for("admin_cape_info_page", cape_id=new_cape.id), 303)
+
+
+@router.get("/capes/{cape_id}", response_class=HTMLResponse, dependencies=[AdminUserDep])
+async def admin_cape_info_page(request: Request, cape_id: int):
+    if (cape := await Cape.get_or_none(id=cape_id)) is None:
+        return RedirectResponse(request.url_for("admin_capes_page"), 303)
+
+    return templates.TemplateResponse(request=request, name="cape.jinja2", context={
+        "cape": cape,
+    })
+
+
+@router.post("/capes/{cape_id}", response_class=HTMLResponse, dependencies=[AdminUserDep])
+async def admin_edit_cape(request: Request, cape_id: int, form: CapeInfoForm = Form()):
+    if (cape := await Cape.get_or_none(id=cape_id)) is None:
+        return RedirectResponse(request.url_for("admin_capes_page"), 303)
+
+    cape.name = form.name
+    cape.description = form.description
+    cape.public = form.public
+    cape.info_public = form.info_public
+    await cape.save(update_fields=["name", "description", "public", "info_public"])
+
+    return RedirectResponse(request.url_for("admin_cape_info_page", cape_id=cape.id), 303)

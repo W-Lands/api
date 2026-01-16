@@ -99,3 +99,14 @@ class UpdateAnnouncementForm(BaseModel):
 
 class ToggleBanForm(BaseModel):
     reason: str | None = None
+
+
+class CapeInfoForm(BaseModel):
+    name: str
+    description: str
+    public: bool = False
+    info_public: bool = False
+
+
+class CreateCapeForm(CapeInfoForm):
+    file: UploadFile
