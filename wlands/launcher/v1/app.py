@@ -105,8 +105,8 @@ async def login(data: LoginData):
     session = await GameSession.create(user=user)
 
     return {
-        "token": f"{user.id.hex}{session.id.hex}{session.token}",
-        "refresh_token": f"{user.id.hex}{session.id.hex}{session.refresh_token}",
+        "token": session.make_token(),
+        "refresh_token": session.make_refresh_token(),
         "expires_at": int(session.expires_at.timestamp()),
     }
 
@@ -115,20 +115,22 @@ async def login(data: LoginData):
 async def refresh_session(data: TokenRefreshData, session: GameSession = Depends(sess_auth_expired)):
     user = session.user
 
-    refresh_token = data.refresh_token
-    user_id_hex = refresh_token[:32]
-    session_id_hex = refresh_token[32:64]
-    refresh_token = refresh_token[64:]
-
-    if session.refresh_token != refresh_token or user_id_hex != user.id.hex or session_id_hex != session.id.hex:
+    token_unpacked = GameSession.parse_token(data.refresh_token)
+    if token_unpacked is None:
         raise CustomBodyException(400, {"refresh_token": ["Invalid refresh token."]})
 
-    new_session = await GameSession.create(user=user)
-    await session.delete()
+    user_id, session_id, refresh_token = token_unpacked
+
+    if session.refresh_token != refresh_token or user_id != user.id or session_id != session.id:
+        raise CustomBodyException(400, {"refresh_token": ["Invalid refresh token."]})
+
+    async with in_transaction():
+        new_session = await GameSession.create(user=user)
+        await session.delete()
 
     return {
-        "token": f"{user.id.hex}{new_session.id.hex}{new_session.token}",
-        "refresh_token": f"{user.id.hex}{new_session.id.hex}{new_session.refresh_token}",
+        "token": new_session.make_token(),
+        "refresh_token": new_session.make_refresh_token(),
         "expires_at": int(new_session.expires_at.timestamp()),
     }
 

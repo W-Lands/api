@@ -1,11 +1,14 @@
+from datetime import datetime, UTC, timedelta
+
 import bcrypt
 import pytest
 from httpx import AsyncClient
 
+from tests.launcher.utils import TokenAuth
 from wlands.launcher.v1.app import max_attempts_per_time_window_password
 from wlands.launcher.v1.request_models import LoginData
 from wlands.launcher.v1.response_models import ErrorsResponse, AuthResponse
-from wlands.models import User
+from wlands.models import User, GameSession
 
 TEST_NICKNAME = "test_user1"
 TEST_EMAIL = f"{TEST_NICKNAME}@example.com"
@@ -174,3 +177,23 @@ async def test_auth_failed_attempts_not_exceeded(client: AsyncClient, email: str
     resp = AuthResponse(**response.json())
     assert resp.token
     assert resp.refresh_token
+
+
+@pytest.mark.asyncio
+async def test_session_refresh(client: AsyncClient) -> None:
+    user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
+    session = await GameSession.create(user=user, expires_at=datetime.now(UTC) - timedelta(minutes=1))
+
+    response = await client.get("/launcher/v1/users/me", auth=TokenAuth(session.make_token()))
+    assert response.status_code == 403
+
+    response = await client.post("/launcher/v1/auth/refresh", auth=TokenAuth(session.make_token()), json={
+        "refresh_token": session.make_refresh_token(),
+    })
+    assert response.status_code == 200
+    resp = AuthResponse(**response.json())
+    assert resp.token
+    assert resp.refresh_token
+
+    response = await client.get("/launcher/v1/users/me", auth=TokenAuth(resp.token))
+    assert response.status_code == 200

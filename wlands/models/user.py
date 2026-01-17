@@ -63,5 +63,5 @@ class User(Model):
         return [textures]
 
     async def get_cape(self) -> models.Cape | None:
-        return await models.Cape.get_or_none(usercape__user=self, usercape__selected=True)
+        return await models.Cape.get_or_none(usercapes__user=self, usercapes__selected=True)
 
