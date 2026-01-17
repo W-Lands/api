@@ -1,19 +1,14 @@
 from datetime import datetime, UTC, timedelta
 
-import bcrypt
 import pytest
 from httpx import AsyncClient
 
+from tests.launcher.data import TEST_EMAIL, TEST_NICKNAME, TEST_PASSWORD_HASH, TEST_PASSWORD
 from tests.launcher.utils import TokenAuth
 from wlands.launcher.v1.app import max_attempts_per_time_window_password
 from wlands.launcher.v1.request_models import LoginData
 from wlands.launcher.v1.response_models import ErrorsResponse, AuthResponse, SessionExpirationResponse
 from wlands.models import User, GameSession
-
-TEST_NICKNAME = "test_user1"
-TEST_EMAIL = f"{TEST_NICKNAME}@example.com"
-TEST_PASSWORD = "test_passw0rd)"
-TEST_PASSWORD_HASH = bcrypt.hashpw(TEST_PASSWORD.encode("utf8"), bcrypt.gensalt(4)).decode("utf8")
 
 param_login = pytest.mark.parametrize(
     ("email", "login_email",),
