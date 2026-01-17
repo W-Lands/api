@@ -5,22 +5,22 @@ from time import time
 from uuid import uuid4
 
 from bcrypt import checkpw
-from fastapi import Depends, UploadFile, APIRouter
+from fastapi import UploadFile, APIRouter
 from pytz import UTC
 from starlette.responses import RedirectResponse
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
-from .dependencies import sess_auth_expired, AuthUserOptDep, AuthUserDep, AuthSessExpDep
+from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
+from wlands.exceptions import CustomBodyException
+from wlands.models import LauncherUpdate, UpdateOs
+from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, \
+    AuthlibAgent, ProfileServerAddress, FailedLoginAttempt, FailType, Cape, UserCape
+from .dependencies import AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
     LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo
 from .utils import Mfa, get_image_from_b64, image_worker, reencode_png
-from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
-from wlands.exceptions import CustomBodyException
-from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, \
-    AuthlibAgent, ProfileServerAddress, FailedLoginAttempt, FailType, Cape, UserCape
-from wlands.models import LauncherUpdate, UpdateOs
 
 router = APIRouter()
 

@@ -29,7 +29,7 @@ async def test_get_user_info(client: AsyncClient) -> None:
     assert not resp.admin
 
 
-@pytest.mark.skip(reason="No s3 server is running")
+@pytest.mark.usefixtures("fake_s3_server")
 @pytest.mark.asyncio
 async def test_user_edit_skin(client: AsyncClient) -> None:
     user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
