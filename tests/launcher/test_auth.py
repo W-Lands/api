@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from tests.launcher.utils import TokenAuth
 from wlands.launcher.v1.app import max_attempts_per_time_window_password
 from wlands.launcher.v1.request_models import LoginData
-from wlands.launcher.v1.response_models import ErrorsResponse, AuthResponse
+from wlands.launcher.v1.response_models import ErrorsResponse, AuthResponse, SessionExpirationResponse
 from wlands.models import User, GameSession
 
 TEST_NICKNAME = "test_user1"
@@ -197,3 +197,37 @@ async def test_session_refresh(client: AsyncClient) -> None:
 
     response = await client.get("/launcher/v1/users/me", auth=TokenAuth(resp.token))
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("delta", "is_expired"),
+    [
+        (timedelta(minutes=-1), True),
+        (timedelta(minutes=1), False),
+    ],
+    ids=["expired", "not expired"],
+)
+@pytest.mark.asyncio
+async def test_session_check_expired(client: AsyncClient, delta: timedelta, is_expired: bool) -> None:
+    user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
+    session = await GameSession.create(user=user, expires_at=datetime.now(UTC)  + delta)
+
+    response = await client.get("/launcher/v1/auth/verify", auth=TokenAuth(session.make_token()))
+    assert response.status_code == 200
+    resp = SessionExpirationResponse(**response.json())
+    assert resp.expired == is_expired
+
+
+@pytest.mark.asyncio
+async def test_logout(client: AsyncClient) -> None:
+    user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
+    session = await GameSession.create(user=user)
+
+    response = await client.get("/launcher/v1/users/me", auth=TokenAuth(session.make_token()))
+    assert response.status_code == 200
+
+    response = await client.post("/launcher/v1/auth/logout", auth=TokenAuth(session.make_token()))
+    assert response.status_code == 204
+
+    response = await client.get("/launcher/v1/users/me", auth=TokenAuth(session.make_token()))
+    assert response.status_code == 403

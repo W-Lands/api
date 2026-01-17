@@ -112,7 +112,7 @@ async def login(data: LoginData):
 
 
 @router.post("/auth/refresh", response_model=AuthResponse)
-async def refresh_session(data: TokenRefreshData, session: GameSession = Depends(sess_auth_expired)):
+async def refresh_session(data: TokenRefreshData, session: AuthSessExpDep):
     user = session.user
 
     token_unpacked = GameSession.parse_token(data.refresh_token)
