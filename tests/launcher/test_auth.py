@@ -226,3 +226,33 @@ async def test_logout(client: AsyncClient) -> None:
 
     response = await client.get("/launcher/v1/users/me", auth=TokenAuth(session.make_token()))
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_session_refresh_invalid_refresh_token(client: AsyncClient) -> None:
+    user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
+    session = await GameSession.create(user=user, expires_at=datetime.now(UTC) - timedelta(minutes=1))
+
+    response = await client.get("/launcher/v1/users/me", auth=TokenAuth(session.make_token()))
+    assert response.status_code == 403
+
+    refresh_token = session.make_refresh_token()
+    response = await client.post("/launcher/v1/auth/refresh", auth=TokenAuth(session.make_token()), json={
+        "refresh_token": refresh_token[:48],
+    })
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_session_refresh_token_from_another_session(client: AsyncClient) -> None:
+    user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
+    session1 = await GameSession.create(user=user)
+    session2 = await GameSession.create(user=user, expires_at=datetime.now(UTC) - timedelta(minutes=1))
+
+    response = await client.get("/launcher/v1/users/me", auth=TokenAuth(session2.make_token()))
+    assert response.status_code == 403
+
+    response = await client.post("/launcher/v1/auth/refresh", auth=TokenAuth(session1.make_token()), json={
+        "refresh_token": session2.make_refresh_token(),
+    })
+    assert response.status_code == 400

@@ -11,7 +11,7 @@ from starlette.responses import RedirectResponse
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
-from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET
+from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET, S3_GAME_BUCKET
 from wlands.exceptions import CustomBodyException
 from wlands.models import LauncherUpdate, UpdateOs
 from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, \
@@ -82,6 +82,12 @@ async def login(data: LoginData):
     if (user := await User.get_or_none(query)) is None:
         raise CustomBodyException(400, {"errors": ["User with this email/password does not exists."]})
 
+    if user.banned:
+        errors = ["User is banned."]
+        if user.ban_reason:
+            errors.append(f"Ban reason: {user.ban_reason}")
+        raise CustomBodyException(400, {"errors": errors})
+
     if await _check_login_attempts_exceeded(user):
         raise CustomBodyException(400, {"errors": ["Exceeded maximum number of login requests."]})
 
@@ -94,13 +100,6 @@ async def login(data: LoginData):
     if codes is not None and data.code not in codes:
         await FailedLoginAttempt.create(user=user, type=FailType.MFA)
         raise CustomBodyException(400, {"errors": ["Incorrect 2fa code."]})
-
-    # TODO: check if user is banned before checking password and/or mfa code?
-    if user.banned:
-        errors = ["User is banned."]
-        if user.ban_reason:
-            errors.append(f"Ban reason: {user.ban_reason}")
-        raise CustomBodyException(400, {"errors": errors})
 
     session = await GameSession.create(user=user)
 
@@ -213,7 +212,7 @@ async def upload_logs(log: UploadFile, user: AuthUserDep, session: str | None = 
         session = time() // 86400
 
     file = BytesIO(await log.read())
-    await S3.upload_object("wlands", f"logs/{date}/{user.id}/{session}/{int(time() % 86400)}.txt", file)
+    await S3.upload_object(S3_GAME_BUCKET, f"logs/{date}/{user.id}/{session}/{int(time() % 86400)}.txt", file)
 
 
 @router.get("/profiles", response_model=list[ProfileInfo])
