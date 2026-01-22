@@ -29,20 +29,52 @@ async def test_get_user_info(client: AsyncClient) -> None:
     assert not resp.admin
 
 
+@pytest.mark.parametrize(
+    ("skin_color", "skin_dims", "skin_is_none", "expect_code"),
+    [
+        ((255, 0, 0), (64, 64), False, 200),
+        ((255, 0, 0), (65, 64), False, 400),
+        ((255, 0, 0), (64, 65), False, 400),
+        ((255, 0, 0), (65, 65), False, 400),
+        (None, None, True, 200),
+    ],
+    ids=(
+            "solid red image 64x64",
+            "invalid skin 65x64",
+            "invalid skin 64x65",
+            "invalid skin 65x65",
+            "no skin",
+    ),
+)
 @pytest.mark.usefixtures("fake_s3_server")
 @pytest.mark.asyncio
-async def test_user_edit_skin(client: AsyncClient) -> None:
+async def test_user_edit_skin(
+        client: AsyncClient, skin_color: tuple[int, int, int] | None, skin_dims: tuple[int, int] | None,
+        skin_is_none: bool, expect_code: int,
+) -> None:
     user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
     session = await GameSession.create(user=user)
 
-    photo_file = BytesIO()
-    Image.new(mode="RGB", size=(64, 64), color=(255, 0, 0)).save(photo_file, format="PNG")
-    image_b64 = base64.b64encode(photo_file.getvalue()).decode("utf8")
+    if skin_color is not None and skin_dims is not None:
+        photo_file = BytesIO()
+        Image.new(mode="RGB", size=skin_dims, color=skin_color).save(photo_file, format="PNG")
+        image_b64 = base64.b64encode(photo_file.getvalue()).decode("utf8")
+        skin_data = f"data:image/png;base64,{image_b64}"
+    else:
+        skin_data = None
+
+    response = await client.patch("/launcher/v1/users/me", auth=TokenAuth(session.make_token()), json={
+        "skin": skin_data,
+    })
+    assert response.status_code == expect_code
+    if expect_code == 200:
+        resp = UserInfoResponse(**response.json())
+        assert (resp.skin is None) == skin_is_none
+        assert resp.cape is None
 
     response = await client.patch("/launcher/v1/users/me", auth=TokenAuth(session.make_token()), json=PatchUserData(
-        skin=f"data:image/png;base64,{image_b64}"
+        skin="",
     ).model_dump())
     assert response.status_code == 200
     resp = UserInfoResponse(**response.json())
-    assert resp.skin is not None
-    assert resp.cape is None
+    assert resp.skin is None

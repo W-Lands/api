@@ -217,7 +217,7 @@ async def upload_logs(log: UploadFile, user: AuthUserDep, session: str | None = 
 
 @router.get("/profiles", response_model=list[ProfileInfo])
 async def get_profiles(user: AuthUserOptDep, with_manifest: bool = True, only_public: bool = True):
-    only_public = only_public and user is not None and user.admin
+    only_public = only_public or user is None or not user.admin
     profiles_q = Q(public=True) if only_public else Q()
 
     profiles = await GameProfile.filter(profiles_q).order_by("-updated_at")
