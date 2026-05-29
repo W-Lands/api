@@ -735,7 +735,7 @@ async def create_update_auto(request: Request, admin: AdminUser, form: CreateUpd
     code = repo_metadata["version_code"]
     name = repo_metadata["version"]
 
-    return await create_update(request, admin, code, CreateUpdateForm(
+    return await create_update(request, admin, CreateUpdateForm(
         code=code,
         name=name,
         changelog=form.changelog,

@@ -131,7 +131,7 @@ async def player_report_post(data: ReportRequest, user: User = Depends(mc_user_a
         users_dict = {user.id: user for user in users}
 
         pubkeys = {}
-        for keypair in await PlayerKeyPair.filter(user__id__in=user_ids):
+        for keypair in await PlayerKeyPair.filter(user_id__in=user_ids):
             pubkeys[keypair.user_id] = RSA.import_key(keypair.public_key)
 
         indexes: dict[str, int] = {}

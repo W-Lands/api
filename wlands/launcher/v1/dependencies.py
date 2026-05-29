@@ -1,9 +1,8 @@
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import Request, Depends
-from pytz import UTC
 
 from wlands.exceptions import ForbiddenException
 from wlands.models import User, GameSession
@@ -19,7 +18,7 @@ async def get_session(request: Request, allow_expired: bool) -> GameSession:
     session_id = UUID(token[32:64])
     session_token = token[64:]
 
-    q = {"id": session_id, "user__id": user_id, "token": session_token}
+    q: dict = {"id": session_id, "user_id": user_id, "token": session_token}
     if not allow_expired:
         q["expires_at__gt"] = datetime.now(UTC)
     if (session := await GameSession.get_or_none(**q).select_related("user")) is None:

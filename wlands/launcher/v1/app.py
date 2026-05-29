@@ -167,23 +167,28 @@ async def _edit_cape(user: User, new_cape_id: int) -> None:
         return
 
     old_cape = await UserCape.get_or_none(user=user, selected=True)
-    if old_cape.cape_id == new_cape_id:
+    if old_cape is not None and old_cape.cape_id == new_cape_id:
         return
 
-    new_cape = await UserCape.get_or_none(user=user, cape__id=new_cape_id)
+    new_cape = await UserCape.get_or_none(user=user, cape_id=new_cape_id)
     if new_cape is None:
         raise CustomBodyException(400, {"cape_id": ["This cape is not available for you."]})
 
-    old_cape.selected = False
+    to_update = [new_cape]
     new_cape.selected = True
-    await UserCape.bulk_update([old_cape, new_cape], fields=["selected"])
+
+    if old_cape is not None:
+        old_cape.selected = False
+        to_update.append(old_cape)
+
+    await UserCape.bulk_update(to_update, fields=["selected"])
 
 
 @router.patch("/users/me", response_model=UserInfoResponse)
 @router.patch("/users/@me", response_model=UserInfoResponse, deprecated=True)
 async def edit_me(data: PatchUserData, user: AuthUserDep):
     save_fields = []
-    if (texture := get_image_from_b64(data.skin)) is not None:
+    if data.skin is not None and (texture := get_image_from_b64(data.skin)) is not None:
         texture = await get_running_loop().run_in_executor(image_worker, reencode_png, texture)
         user.skin = uuid4()
         await S3.upload_object("wlands", f"skins/{user.id}/{user.skin}.png", texture)
@@ -205,7 +210,7 @@ async def edit_me(data: PatchUserData, user: AuthUserDep):
 @router.post("/logs", status_code=204)
 async def upload_logs(log: UploadFile, user: AuthUserDep, session: str | None = None):
     date = datetime.now(UTC).strftime("%d%m%Y")
-    if log.size > 1024 * 1024 * 16:
+    if log.size is None or log.size > 1024 * 1024 * 16:
         return
 
     if session is None:
@@ -317,7 +322,7 @@ async def get_profile_ips(profile_id: int, user: AuthUserOptDep):
 async def get_capes(user: AuthUserDep):
     user_cape_ids = set()
     user_cape_sel = None
-    for cape_id, selected in await UserCape.filter(user=user).values_list("cape__id", "selected"):
+    for cape_id, selected in await UserCape.filter(user=user).values_list("cape_id", "selected"):
         user_cape_ids.add(cape_id)
         if selected:
             user_cape_sel = cape_id

@@ -4,6 +4,7 @@ from base64 import b32decode, b64decode
 from concurrent.futures.thread import ThreadPoolExecutor
 from io import BytesIO
 from time import time
+from typing import cast
 
 from PIL import Image
 from magic import from_buffer
@@ -39,7 +40,8 @@ class Mfa:
         if now == last:
             return code, code
 
-        return code, Mfa.get_code(user, secret, _time_offset=-5)
+        offset_code = cast(str, Mfa.get_code(user, secret, _time_offset=-5))
+        return code, offset_code
 
 
 def get_image_from_b64(image: str) -> BytesIO | None:

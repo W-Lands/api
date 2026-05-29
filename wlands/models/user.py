@@ -19,7 +19,7 @@ class User(Model):
     email: str = fields.CharField(max_length=255, unique=True)
     nickname: str = fields.CharField(max_length=32, unique=True)
     password: str = fields.TextField()
-    skin: str | None = fields.UUIDField(null=True, default=None)
+    skin: UUID | None = fields.UUIDField(null=True, default=None)
     mfa_key: str | None = fields.CharField(null=True, default=None, max_length=64)
     banned: bool = fields.BooleanField(default=False)
     ban_reason: str | None = fields.TextField(null=True, default=None)
