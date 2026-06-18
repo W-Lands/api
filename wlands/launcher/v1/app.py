@@ -1,4 +1,3 @@
-from asyncio import get_running_loop
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from time import time
@@ -20,7 +19,7 @@ from .dependencies import AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
     LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo
-from .utils import Mfa, get_image_from_b64, image_worker, reencode_png
+from .utils import Mfa, get_image_from_b64, reencode_png
 
 router = APIRouter()
 
@@ -189,7 +188,7 @@ async def _edit_cape(user: User, new_cape_id: int) -> None:
 async def edit_me(data: PatchUserData, user: AuthUserDep):
     save_fields = []
     if data.skin is not None and (texture := get_image_from_b64(data.skin)) is not None:
-        texture = await get_running_loop().run_in_executor(image_worker, reencode_png, texture)
+        texture = await reencode_png(texture)
         user.skin = uuid4()
         await S3.upload_object("wlands", f"skins/{user.id}/{user.skin}.png", texture)
         save_fields.append("skin")

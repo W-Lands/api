@@ -94,6 +94,7 @@ class CapeInfo(BaseModel):
     name: str
     description: str
     url: str
+    preview: str
     public: bool
     info_public: bool
     created_at: int

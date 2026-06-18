@@ -26,6 +26,7 @@ from wlands.admin.jinja_filters import format_size, format_enum, format_bool, fo
 from wlands.config import S3, S3_FILES_BUCKET, S3_GAME_BUCKET
 from wlands.common.manifest_models import VersionManifest
 from wlands.common.qtifw_update_xml import Updates
+from wlands.launcher.v1.utils import make_cape_preview
 from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFile, ProfileFileLoc, ProfileFileAction, \
     LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress, Cape
 
@@ -888,6 +889,7 @@ async def admin_capes_page(request: Request, page: int = 1):
 @router.post("/capes", response_class=HTMLResponse, dependencies=[AdminUserDep])
 async def admin_create_cape(request: Request, form: CreateCapeForm = Form()):
     async with in_transaction():
+        preview = await make_cape_preview(form.file.file)
         file_id = uuid4().hex
         new_cape = await Cape.create(
             name=form.name,
@@ -895,6 +897,7 @@ async def admin_create_cape(request: Request, form: CreateCapeForm = Form()):
             public=form.public,
             info_public=form.info_public,
             file_id=file_id,
+            preview=preview,
         )
         await form.file.seek(0)
         await S3.upload_object(S3_GAME_BUCKET, f"capes/{new_cape.id}/{file_id}.png", form.file.file)

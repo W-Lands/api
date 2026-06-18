@@ -1,10 +1,12 @@
+import asyncio
+import base64
 import hmac
 import struct
 from base64 import b32decode, b64decode
 from concurrent.futures.thread import ThreadPoolExecutor
 from io import BytesIO
 from time import time
-from typing import cast
+from typing import cast, BinaryIO
 
 from PIL import Image
 from magic import from_buffer
@@ -50,7 +52,7 @@ def get_image_from_b64(image: str) -> BytesIO | None:
             or "base64" not in image.split(",")[0]:
         return None
 
-    image = BytesIO(b64decode(image.split(",")[1].encode("utf8")))
+    image = BytesIO(b64decode(image.split(",")[1].encode("ascii")))
     mime = from_buffer(image.read(1024), mime=True)
     if not mime.startswith("image/"):
         return None
@@ -61,8 +63,23 @@ def get_image_from_b64(image: str) -> BytesIO | None:
 image_worker = ThreadPoolExecutor(2, "Image Worker")
 
 
-def reencode_png(file: BytesIO) -> BytesIO:
+def _reencode_png_sync(file: BytesIO) -> BytesIO:
     img = Image.open(file)
     out = BytesIO()
     img.save(out, format="PNG")
     return out
+
+
+async def reencode_png(file: BytesIO) -> BytesIO:
+    return await asyncio.get_running_loop().run_in_executor(image_worker, _reencode_png_sync, file)
+
+
+def _make_cape_preview_sync(file: BinaryIO) -> str:
+    img = Image.open(file)
+    out = BytesIO()
+    img.crop((0, 0, 12, 17)).save(out, format="PNG")
+    return base64.b64encode(out.getvalue()).decode("ascii")
+
+
+async def make_cape_preview(file: BinaryIO) -> str:
+    return await asyncio.get_running_loop().run_in_executor(image_worker, _make_cape_preview_sync, file)

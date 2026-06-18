@@ -13,7 +13,7 @@
             <div class="card" style="width: 18rem;">
                 <div class="text-center position-relative" style="aspect-ratio: 12 / 17;">
                     <a href="{{ url_for("admin_cape_info_page", cape_id=cape.id) }}">
-                        <canvas id="cape-canvas-{{ cape.id }}" class="w-100 h-100 d-block"></canvas>
+                        <img src="data:image/png;base64,{{ cape.preview }}" class="w-100 h-100 d-block cape-img" alt="Cape '{{ cape.name }}' image"/>
                     </a>
                 </div>
                 <div class="card-body d-flex flex-column gap-1">
@@ -45,8 +45,7 @@
                         </div>
                         <div class="mb-3">
                             <label for="description-input" class="form-label fw-bold">Description</label>
-                            <textarea class="form-control" id="description-input" name="description"
-                                      required></textarea>
+                            <textarea class="form-control" id="description-input" name="description" required></textarea>
                         </div>
                         <div class="mb-3 form-check">
                             <label for="cape-public-checkbox" class="form-label form-check-label">Public</label>
@@ -69,25 +68,4 @@
             </div>
         </div>
     </div>
-
-    <script>
-        const cape_urls = {
-            {% for cape in capes %}
-                {{ cape.id }}: "{{ cape.url }}",
-            {% endfor %}
-        };
-
-        document.addEventListener("DOMContentLoaded", () => {
-            for (const cape_id of [{% for cape in capes %}{{ cape.id }},{% endfor %}]) {
-                const canvas = document.getElementById(`cape-canvas-${cape_id}`);
-                const ctx = canvas.getContext("2d");
-                const image = new Image();
-                image.onload = () => {
-                    ctx.imageSmoothingEnabled = false;
-                    ctx.drawImage(image, 0, 0, 12, 17, 0, 0, canvas.width, canvas.height);
-                }
-                image.src = cape_urls[cape_id].replace(/&amp;/g, "&");
-            }
-        });
-    </script>
 {% endblock %}
