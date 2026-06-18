@@ -65,7 +65,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form action="{{ url_for("admin_cape_edit", cape_id=cape.id) }}" method="POST" id="edit-cape-form">
+                    <form action="{{ url_for("admin_cape_edit", cape_id=cape.id) }}" method="POST" id="edit-cape-form" enctype="multipart/form-data">
                         <div class="mb-3">
                             <label for="name-input" class="form-label fw-bold">Name</label>
                             <input type="text" class="form-control" id="name-input" name="name" required value="{{ cape.name }}">
@@ -82,13 +82,10 @@
                             <label for="info-public-checkbox" class="form-label form-check-label">Info public</label>
                             <input type="checkbox" class="form-check-input" id="info-public-checkbox" name="info_public" {% if cape.info_public %}checked{% endif %}>
                         </div>
-                        <!--
-                        TODO: add ability to edit image
                         <div class="mb-3">
-                            <label for="cape-file" class="form-label fw-bold">Cape file</label>
-                            <input type="file" class="form-control" id="cape-file" name="file" required accept=".png">
+                            <label for="cape-file" class="form-label fw-bold">New cape file</label>
+                            <input type="file" class="form-control" id="cape-file" name="file" accept=".png">
                         </div>
-                        -->
                     </form>
                 </div>
                 <div class="modal-footer">

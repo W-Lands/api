@@ -106,10 +106,11 @@ class CapeInfoForm(BaseModel):
     description: str
     public: bool = False
     info_public: bool = False
+    file: UploadFile
 
 
 class CreateCapeForm(CapeInfoForm):
-    file: UploadFile
+    pass
 
 
 class CapeAddUserForm(BaseModel):

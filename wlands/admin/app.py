@@ -939,7 +939,16 @@ async def admin_cape_edit(request: Request, cape_id: int, form: CapeInfoForm = F
     cape.description = form.description
     cape.public = form.public
     cape.info_public = form.info_public
-    await cape.save(update_fields=["name", "description", "public", "info_public"])
+
+    update_fields = ["name", "description", "public", "info_public"]
+    if form.file.size is not None and form.file.size > 0:
+        cape.file_id = uuid4()
+        cape.preview = await make_cape_preview(form.file.file)
+        await form.file.seek(0)
+        await S3.upload_object(S3_GAME_BUCKET, f"capes/{cape.id}/{cape.file_id.hex}.png", form.file.file)
+        update_fields.extend(("file_id", "preview"))
+
+    await cape.save(update_fields=update_fields)
 
     return RedirectResponse(request.url_for("admin_cape_info_page", cape_id=cape.id), 303)
 
