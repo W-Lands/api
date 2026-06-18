@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from tortoise import fields, Model
 
 from wlands import models
@@ -11,7 +13,7 @@ class UserCape(Model):
     cape: models.Cape = fields.ForeignKeyField("models.Cape")
     selected: bool = fields.BooleanField(default=False)
 
-    user_id: int
+    user_id: UUID
     cape_id: int
 
     class Meta:

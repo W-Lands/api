@@ -35,7 +35,7 @@
         </tbody>
     </table>
 
-    {{ render_pagination(pagination, "admin_updates_page") }}
+    {{ render_pagination(pagination, url_for("admin_updates_page")) }}
 
     <div class="modal fade" id="create-update-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">

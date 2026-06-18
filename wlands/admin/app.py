@@ -21,15 +21,15 @@ from wlands.admin.dependencies import AdminUserMaybe, AdminUser, AdminUserDep, A
 from wlands.admin.forms import LoginForm, UserCreateForm, ProfileCreateForm, ProfileInfoForm, ProfileManifestForm, \
     ProfileAddressForm, UploadProfileFilesForm, RenameProfileFileForm, DeleteProfileFileForm, CreateUpdateForm, \
     CreateUpdateAutoForm, UpdateAuthlibForm, EditUpdateForm, CreateAnnouncementForm, UpdateAnnouncementForm, \
-    ToggleBanForm, CreateCapeForm, CapeInfoForm
-from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime
+    ToggleBanForm, CreateCapeForm, CapeInfoForm, CapeAddUserForm
+from wlands.admin.jinja_filters import format_size, format_enum, format_bool, format_datetime, \
+    jinja_append_query_to_url, jinja_append_param_to_url
 from wlands.config import S3, S3_FILES_BUCKET, S3_GAME_BUCKET
 from wlands.common.manifest_models import VersionManifest
 from wlands.common.qtifw_update_xml import Updates
 from wlands.launcher.v1.utils import make_cape_preview
 from wlands.models import User, UserSession, GameSession, GameProfile, ProfileFile, ProfileFileLoc, ProfileFileAction, \
-    LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress, Cape
-
+    LauncherUpdate, UpdateOs, LauncherAnnouncement, AnnouncementOs, AuthlibAgent, ProfileServerAddress, Cape, UserCape
 
 router = APIRouter(prefix="/admin")
 templates_env = Environment(
@@ -41,6 +41,8 @@ templates_env.filters["format_size"] = format_size
 templates_env.filters["format_enum"] = format_enum
 templates_env.filters["format_bool"] = format_bool
 templates_env.filters["format_datetime"] = format_datetime
+templates_env.globals["append_query_to_url"] = jinja_append_query_to_url
+templates_env.globals["append_param_to_url"] = jinja_append_param_to_url
 
 
 class ProfileRootDir(BaseModel):
@@ -906,17 +908,30 @@ async def admin_create_cape(request: Request, form: CreateCapeForm = Form()):
 
 
 @router.get("/capes/{cape_id}", response_class=HTMLResponse, dependencies=[AdminUserDep])
-async def admin_cape_info_page(request: Request, cape_id: int):
+async def admin_cape_info_page(request: Request, cape_id: int, page: int = 1, search: str = ""):
     if (cape := await Cape.get_or_none(id=cape_id)) is None:
         return RedirectResponse(request.url_for("admin_capes_page"), 303)
 
+    PAGE_SIZE = 25
+    page = max(1, page)
+
+    users_query = UserCape.filter(cape_id=cape.id)
+    if search:
+        users_query = users_query.filter(user__nickname__icontains=search)
+    users_query = users_query.order_by("id").select_related("user")
+
+    users = await users_query.offset(PAGE_SIZE * (page - 1)).limit(PAGE_SIZE)
+    total = await users_query.count()
+
     return templates.TemplateResponse(request=request, name="cape.jinja2", context={
         "cape": cape,
+        "users": users,
+        "pagination": Pagination(page, PAGE_SIZE, total),
     })
 
 
-@router.post("/capes/{cape_id}", response_class=HTMLResponse, dependencies=[AdminUserDep])
-async def admin_edit_cape(request: Request, cape_id: int, form: CapeInfoForm = Form()):
+@router.post("/capes/{cape_id}/edit", response_class=HTMLResponse, dependencies=[AdminUserDep])
+async def admin_cape_edit(request: Request, cape_id: int, form: CapeInfoForm = Form()):
     if (cape := await Cape.get_or_none(id=cape_id)) is None:
         return RedirectResponse(request.url_for("admin_capes_page"), 303)
 
@@ -927,3 +942,23 @@ async def admin_edit_cape(request: Request, cape_id: int, form: CapeInfoForm = F
     await cape.save(update_fields=["name", "description", "public", "info_public"])
 
     return RedirectResponse(request.url_for("admin_cape_info_page", cape_id=cape.id), 303)
+
+
+@router.post("/capes/{cape_id}/users", response_class=HTMLResponse, dependencies=[AdminUserDep])
+async def admin_cape_add_user(request: Request, cape_id: int, form: CapeAddUserForm = Form()):
+    if (cape := await Cape.get_or_none(id=cape_id)) is None:
+        return RedirectResponse(request.url_for("admin_capes_page"), 303)
+
+    user = await User.get_or_none(nickname=form.username.lower())
+    if user is None:
+        raise HTTPException(status_code=404, detail="Unknown user")
+
+    await UserCape.get_or_create(cape_id=cape.id, user_id=user.id)
+
+    return RedirectResponse(request.url_for("admin_cape_info_page", cape_id=cape.id), 303)
+
+
+@router.post("/capes/{cape_id}/users/{user_id}/remove", response_class=HTMLResponse, dependencies=[AdminUserDep])
+async def admin_cape_remove_user(request: Request, cape_id: int, user_id: UUID):
+    await UserCape.filter(cape_id=cape_id, user_id=user_id).delete()
+    return RedirectResponse(request.url_for("admin_cape_info_page", cape_id=cape_id), 303)

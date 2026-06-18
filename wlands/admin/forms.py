@@ -110,3 +110,7 @@ class CapeInfoForm(BaseModel):
 
 class CreateCapeForm(CapeInfoForm):
     file: UploadFile
+
+
+class CapeAddUserForm(BaseModel):
+    username: str

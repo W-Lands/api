@@ -9,7 +9,7 @@
     </div>
     <ul class="pagination">
         <li class="page-item">
-            <a href="{{ url_for(endpoint) }}?page={{ pagination.page - 1 }}"
+            <a href="{{ append_param_to_url(endpoint, "page", pagination.page - 1) }}"
                class="page-link {% if not pagination.has_prev %}disabled{% endif %}">
                 Previous
             </a>
@@ -18,7 +18,7 @@
             {% if page is not none %}
                 <li class="page-item {% if page == pagination.page %}active{% endif %}">
                     <a
-                            href="{{ url_for(endpoint) }}?page={{ page }}"
+                            href="{{ append_param_to_url(endpoint, "page", page) }}"
                             class="page-link"
                             {% if page == pagination.page %}aria-current="page"{% endif %}>
                         {{ page }}
@@ -31,7 +31,7 @@
             {% endif %}
         {% endfor %}
         <li class="page-item">
-            <a href="{{ url_for(endpoint) }}?page={{ pagination.page + 1 }}"
+            <a href="{{ append_param_to_url(endpoint, "page", pagination.page + 1) }}"
                class="page-link {% if not pagination.has_next %}disabled{% endif %}">
                 Next
             </a>
