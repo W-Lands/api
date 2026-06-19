@@ -11,25 +11,25 @@ jobs:
     strategy:
       matrix:
         # "3.13t" and "3.14t" are not supported
-        #  because pydantic (and maybe other packages) dont support free-threaded python
+        #  because pydantic (and maybe other packages) don't support free-threaded python
         python-version: ["3.11", "3.12", "3.13", "3.14"]
       fail-fast: true
 
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Install Poetry
-        run: pipx install poetry
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Install uv and set the Python version
+        uses: astral-sh/setup-uv@v8.1.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "poetry"
+          enable-cache: true
+          restore-cache: true
+          save-cache: true
 
       - name: Install dependencies
-        run: poetry install --no-root --no-interaction --all-extras --with test
+        run: |
+          uv sync --locked --all-groups --all-extras --dev
 
       - name: Generate keypair
         run: |
@@ -38,7 +38,7 @@ jobs:
 
       - name: Run tests
         run: |
-          poetry run pytest --disable-warnings tests
+          uv run poetry run pytest --disable-warnings tests
         env:
           DATABASE_URL: "sqlite://:memory:"
           S3_ENDPOINT: "http://127.0.0.1:60080"
@@ -47,7 +47,7 @@ jobs:
 
       - name: Print coverage report
         run: |
-          poetry run coverage report
+          uv run coverage report
 
       #- name: Upload coverage reports to Codecov
       #  uses: codecov/codecov-action@v5
