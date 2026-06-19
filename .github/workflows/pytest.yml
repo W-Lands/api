@@ -38,7 +38,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run poetry run pytest --disable-warnings tests
+          uv run pytest --disable-warnings tests
         env:
           DATABASE_URL: "sqlite://:memory:"
           S3_ENDPOINT: "http://127.0.0.1:60080"
