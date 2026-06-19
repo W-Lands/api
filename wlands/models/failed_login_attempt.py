@@ -14,7 +14,7 @@ class FailType(IntEnum):
 
 
 class FailedLoginAttempt(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     user: models.User = fields.ForeignKeyField("models.User")
     type: FailType = fields.IntEnumField(FailType)
     timestamp: datetime = fields.DatetimeField(auto_now_add=True)

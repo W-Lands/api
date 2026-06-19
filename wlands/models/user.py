@@ -15,7 +15,7 @@ from ..config import S3_PUBLIC, YGGDRASIL_PRIVATE_KEY
 
 
 class User(Model):
-    id: UUID = fields.UUIDField(pk=True, default=uuid4)
+    id: UUID = fields.UUIDField(primary_key=True, default=uuid4)
     email: str = fields.CharField(max_length=255, unique=True)
     nickname: str = fields.CharField(max_length=32, unique=True)
     password: str = fields.TextField()

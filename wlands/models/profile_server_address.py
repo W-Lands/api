@@ -5,7 +5,7 @@ from wlands import models
 
 
 class ProfileServerAddress(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     profile: models.GameProfile = fields.ForeignKeyField("models.GameProfile")
     name: str = fields.CharField(max_length=128)
     ip: str = fields.CharField(max_length=64)

@@ -8,7 +8,7 @@ from wlands import models
 
 
 class ReportMessage(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     report: models.PlayerReport = fields.ForeignKeyField("models.PlayerReport")
     user: models.User = fields.ForeignKeyField("models.User")
     date: datetime = fields.DatetimeField()

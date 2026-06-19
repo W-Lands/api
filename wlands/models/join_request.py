@@ -6,6 +6,6 @@ from wlands import models
 
 
 class GameJoinRequest(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     user: models.User = fields.ForeignKeyField("models.User")
     server_id: str = fields.CharField(max_length=64)

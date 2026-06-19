@@ -10,7 +10,7 @@ INVISIBLE_1X1_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 
 class Cape(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     name: str = fields.CharField(max_length=128)
     description: str = fields.TextField()
     file_id: UUID = fields.UUIDField(unique=True, default=uuid4)

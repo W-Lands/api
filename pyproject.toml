@@ -40,8 +40,16 @@ test = [
 [tool.uv]
 package = false
 
-[tool.pytest.ini_options]
-addopts = "--cov-report=xml --cov-append --cov=wlands"
-
 [tool.coverage.run]
 data_file = "coverage.coverage"
+
+[tool.pytest]
+python_classes = []
+filterwarnings = ["error"]
+strict_config = true
+strict_markers = true
+strict_parametrization_ids = true
+strict_xfail = false
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"

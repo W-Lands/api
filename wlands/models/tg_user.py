@@ -6,5 +6,5 @@ from wlands import models
 
 
 class TgUser(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     user: models.User = fields.ForeignKeyField("models.User", on_delete=fields.CASCADE)

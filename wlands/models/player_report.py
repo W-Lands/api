@@ -26,7 +26,7 @@ class ReportReason(StrEnum):
 
 
 class PlayerReport(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     reporter: models.User = fields.ForeignKeyField("models.User", related_name="reporter")
     reported: models.User = fields.ForeignKeyField("models.User", related_name="reported")
     comment: str = fields.TextField(max_length=1024)

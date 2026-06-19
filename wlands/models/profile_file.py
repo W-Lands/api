@@ -26,7 +26,7 @@ class ProfileFileAction(IntEnum):
 
 
 class ProfileFile(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     # TODO: use index for either `name` of `parent` ?? or both ???
     name: str = fields.TextField()
     parent: str = fields.TextField()

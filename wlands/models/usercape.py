@@ -8,7 +8,7 @@ from wlands import models
 
 
 class UserCape(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     user: models.User = fields.ForeignKeyField("models.User")
     cape: models.Cape = fields.ForeignKeyField("models.Cape")
     selected: bool = fields.BooleanField(default=False)

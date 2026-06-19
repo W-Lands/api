@@ -18,7 +18,7 @@ def expires_after_8h():
 
 
 class UserSession(Model):
-    id: UUID = fields.UUIDField(pk=True, default=uuid4)
+    id: UUID = fields.UUIDField(primary_key=True, default=uuid4)
     user: models.User = fields.ForeignKeyField("models.User")
     token: str = fields.CharField(max_length=192, default=random_hex_64b)
     expires_at: datetime = fields.DatetimeField(default=expires_after_8h)

@@ -7,7 +7,7 @@ from wlands.config import S3_PUBLIC, YGGDRASIL_PUBLIC_STR, S3_FILES_BUCKET
 
 
 class AuthlibAgent(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     created_by: models.User = fields.ForeignKeyField("models.User")
     created_at: datetime = fields.DatetimeField(auto_now_add=True)
     size: int = fields.IntField()

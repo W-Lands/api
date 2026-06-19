@@ -23,7 +23,7 @@ def expires_after_6d():
 
 
 class PlayerKeyPair(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     user: models.User = fields.ForeignKeyField("models.User")
     private_key: str = fields.TextField()
     public_key: str = fields.TextField()

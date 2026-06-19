@@ -8,7 +8,7 @@ from wlands import models
 
 
 class GameProfile(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     name: str = fields.CharField(max_length=128, unique=True)
     description: str = fields.TextField()
     creator: models.User | None = fields.ForeignKeyField("models.User", null=True, on_delete=fields.SET_NULL)

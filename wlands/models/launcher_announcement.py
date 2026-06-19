@@ -15,7 +15,7 @@ class AnnouncementOs(IntEnum):
 
 
 class LauncherAnnouncement(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     name: str = fields.CharField(max_length=64)
     created_by: models.User = fields.ForeignKeyField("models.User")
     onetime: bool = fields.BooleanField(default=True)

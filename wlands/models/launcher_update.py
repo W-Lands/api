@@ -16,7 +16,7 @@ class UpdateOs(IntEnum):
 
 
 class LauncherUpdate(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = fields.BigIntField(primary_key=True)
     code: int = fields.IntField()
     name: str = fields.CharField(max_length=64)
     created_by: models.User = fields.ForeignKeyField("models.User")
