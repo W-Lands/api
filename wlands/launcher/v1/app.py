@@ -154,6 +154,7 @@ async def get_me(user: AuthUserDep):
         "email": user.email,
         "nickname": user.nickname,
         "skin": user.skin_url,
+        "skin_full": {"id": user.skin, "url": user.skin_url} if user.skin is not None else None,
         "cape": cape.to_json(True, True) if cape is not None else None,
         "mfa": user.mfa_key is not None,
         "admin": user.admin,

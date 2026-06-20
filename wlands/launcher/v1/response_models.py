@@ -21,11 +21,17 @@ class SessionExpirationResponse(BaseModel):
     expired: bool
 
 
+class UserSkinInfo(BaseModel):
+    id: UUID
+    url: str
+
+
 class UserInfoResponse(BaseModel):
     id: UUID
     email: str
     nickname: str
     skin: str | None
+    skin_full: UserSkinInfo | None
     cape: CapeInfo | None
     mfa: bool
     admin: bool
