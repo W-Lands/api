@@ -15,3 +15,4 @@ from .reported_message import ReportMessage
 from .cape import Cape
 from .usercape import UserCape
 from .failed_login_attempt import FailedLoginAttempt, FailType
+from .options_sync import OptionsSync, OptionsTxt

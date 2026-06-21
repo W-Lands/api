@@ -10,15 +10,16 @@ from starlette.responses import RedirectResponse
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
-from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET, S3_GAME_BUCKET
+from wlands.config import S3, YGGDRASIL_PUBLIC_STR, S3_ENDPOINT_PUBLIC, S3_FILES_BUCKET, S3_GAME_BUCKET, \
+    OPTIONS_SYNC_SLOTS_PER_USER
 from wlands.exceptions import CustomBodyException
-from wlands.models import LauncherUpdate, UpdateOs
+from wlands.models import LauncherUpdate, UpdateOs, OptionsTxt, OptionsSync
 from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherAnnouncement, AnnouncementOs, \
     AuthlibAgent, ProfileServerAddress, FailedLoginAttempt, FailType, Cape, UserCape
 from .dependencies import AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
-    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo
+    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo, OptionsSyncInfo
 from .utils import Mfa, get_image_from_b64, reencode_png
 
 router = APIRouter()
@@ -336,3 +337,37 @@ async def get_capes(user: AuthUserDep):
         )
         for cape in await capes_query.order_by("id")
     ]
+
+
+@router.get("/game-options", response_model=OptionsSyncInfo)
+async def get_game_options_sync_info(user: AuthUserDep) -> OptionsSyncInfo:
+    all_options = await OptionsSync.filter(user=user).only("name")
+
+    return OptionsSyncInfo(
+        slots=[sync.name for sync in all_options],
+        slots_left=max(0, OPTIONS_SYNC_SLOTS_PER_USER - len(all_options))
+    )
+
+
+@router.get("/game-options/{name}", response_model=OptionsTxt, response_model_exclude_none=True)
+async def get_game_options(user: AuthUserDep, name: str):
+    options = await OptionsSync.get_or_none(user=user, name=name)
+    if options is None:
+        raise CustomBodyException(404, {"name": ["Unknown options slot."]})
+
+    # TODO: support returning pre-1.13 keybinds
+
+    return options.settings
+
+
+@router.post("/game-options/{name}", status_code=204)
+async def save_game_options(user: AuthUserDep, name: str, data: OptionsTxt):
+    if not await OptionsSync.filter(user=user, name=name).exists() \
+            and await OptionsSync.filter(user=user).count() >= OPTIONS_SYNC_SLOTS_PER_USER:
+        raise CustomBodyException(400, {"name": ["You dont have settings slots left"]})
+
+    # TODO: check all "key.*" fields and migrate ints to Keybind enum
+
+    options, _ = await OptionsSync.get_or_create(user=user, name=name)
+    options.settings.update(data.model_dump(exclude_none=True))
+    await options.save(update_fields=["settings"])

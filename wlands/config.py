@@ -31,3 +31,4 @@ with open("keys/public.pem", "r") as pubkey:
 INTERNAL_AUTH_TOKEN = environ.get("INTERNAL_AUTH_TOKEN", b64encode(urandom(64)).decode("utf8"))
 ROOT_PATH = environ.get("ROOT_PATH", "")
 DEBUG = environ.get("DEBUG", "").lower() in ("1", "true")
+OPTIONS_SYNC_SLOTS_PER_USER = int(environ.get("OPTIONS_SYNC_SLOTS_PER_USER", 10))

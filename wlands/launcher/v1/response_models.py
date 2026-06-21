@@ -106,3 +106,8 @@ class CapeInfo(BaseModel):
     created_at: int
     selected: bool
     available: bool
+
+
+class OptionsSyncInfo(BaseModel):
+    slots: list[str]
+    slots_left: int
