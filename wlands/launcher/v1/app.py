@@ -162,6 +162,15 @@ async def get_me(user: AuthUserDep):
     }
 
 
+@router.get("/users/me/skin")
+async def get_user_skin(user: AuthUserDep):
+    skin_url = user.skin_url
+    if skin_url is not None:
+        return RedirectResponse(skin_url)
+
+    raise CustomBodyException(404, {"error": ["User does not have a skin."]})
+
+
 async def _edit_cape(user: User, new_cape_id: int) -> None:
     if new_cape_id == 0:
         await UserCape.filter(user=user, selected=True).update(selected=False)
