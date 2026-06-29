@@ -27,6 +27,9 @@ async def test_push_and_get_settings(client: AsyncClient) -> None:
     session = await GameSession.create(user=user)
     auth = TokenAuth(session.make_token())
 
+    response = await client.post("/launcher/v1/game-options", auth=auth, json={"name": "test-slot"})
+    assert response.status_code == 204
+
     response = await client.post("/launcher/v1/game-options/test-slot", auth=auth, json=OptionsTxt(
         autoJump=True,
         autoSuggestions="asdqwe",
@@ -36,7 +39,8 @@ async def test_push_and_get_settings(client: AsyncClient) -> None:
     response = await client.get("/launcher/v1/game-options", auth=auth)
     assert response.status_code == 200
     resp = OptionsSyncInfo(**response.json())
-    assert resp.slots == ["test-slot"]
+    assert len(resp.slots) == 1
+    assert resp.slots[0].name == "test-slot"
     assert resp.slots_left == OPTIONS_SYNC_SLOTS_PER_USER - 1
 
     response = await client.get("/launcher/v1/game-options/test-slot", auth=auth)
@@ -60,13 +64,11 @@ async def test_push_settings_limit_exceeded(client: AsyncClient) -> None:
     session = await GameSession.create(user=user)
     auth = TokenAuth(session.make_token())
 
-    options = OptionsTxt(autoJump=True).model_dump(exclude_none=True)
-
     for i in range(OPTIONS_SYNC_SLOTS_PER_USER):
-        response = await client.post(f"/launcher/v1/game-options/test-slot-{i}", auth=auth, json=options)
+        response = await client.post("/launcher/v1/game-options", auth=auth, json={"name": f"test-slot-{i}"})
         assert response.status_code == 204
 
-    response = await client.post(f"/launcher/v1/game-options/test-slot-limit", auth=auth, json=options)
+    response = await client.post(f"/launcher/v1/game-options", auth=auth, json={"name": "test-slot-limit"})
     assert response.status_code == 400
 
 
@@ -75,6 +77,9 @@ async def test_merge_settings(client: AsyncClient) -> None:
     user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
     session = await GameSession.create(user=user)
     auth = TokenAuth(session.make_token())
+
+    response = await client.post("/launcher/v1/game-options", auth=auth, json={"name": "test-slot"})
+    assert response.status_code == 204
 
     response = await client.post("/launcher/v1/game-options/test-slot", auth=auth, json=OptionsTxt(
         autoJump=True,
@@ -86,7 +91,7 @@ async def test_merge_settings(client: AsyncClient) -> None:
     response = await client.post("/launcher/v1/game-options/test-slot", auth=auth, json=OptionsTxt(
         soundCategory_master=0.5,
         soundCategory_music=0.75,
-        mainHand="right",
+        mainHand="\"right\"",
     ).model_dump(exclude_none=True))
     assert response.status_code == 204
 
@@ -94,7 +99,7 @@ async def test_merge_settings(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "autoJump": True,
-        "mainHand": "right",
+        "mainHand": "\"right\"",
         "soundCategory_master": 0.5,
         "soundCategory_music": 0.75,
     }

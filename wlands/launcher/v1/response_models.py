@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 from pydantic import BaseModel
 
@@ -108,11 +109,16 @@ class CapeInfo(BaseModel):
     available: bool
 
 
+class OptionsSyncSlotInfo(BaseModel):
+    name: str
+    options: dict[str, Any]
+
+
 class OptionsSyncInfo(BaseModel):
-    slots: list[str]
+    slots: list[OptionsSyncSlotInfo]
     slots_left: int
 
 
-class OptionsSyncSlotInfo(BaseModel):
+class CreateOptionsSyncSlot(BaseModel):
     name: str
-    options: dict[str, str]
+    clone: str | None = None

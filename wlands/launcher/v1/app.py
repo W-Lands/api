@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from time import time
+from typing import Any
 from uuid import uuid4
 
 from bcrypt import checkpw
@@ -20,7 +21,7 @@ from .dependencies import AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
     LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo, OptionsSyncInfo, \
-    OptionsSyncSlotInfo
+    OptionsSyncSlotInfo, CreateOptionsSyncSlot
 from .utils import Mfa, get_image_from_b64, reencode_png
 from ...models.options_sync import OptionsTxtSerializationContext
 
@@ -351,29 +352,44 @@ async def get_capes(user: AuthUserDep):
 
 
 @router.get("/game-options", response_model=OptionsSyncInfo)
-async def get_game_options_sync_info(user: AuthUserDep) -> OptionsSyncInfo:
-    all_options = await OptionsSync.filter(user=user).only("name")
+async def get_game_options_sync_info(user: AuthUserDep, old_format: bool = False) -> OptionsSyncInfo:
+    all_options = await OptionsSync.filter(user=user)
 
+    ctx = OptionsTxtSerializationContext(keybinds_format="old" if old_format else "new")
     return OptionsSyncInfo(
-        slots=[sync.name for sync in all_options],
+        slots=[
+            OptionsSyncSlotInfo(
+                name=options.name,
+                options=OptionsTxt(**options.settings).model_dump(exclude_none=True, context=ctx),
+            )
+            for options in all_options
+        ],
         slots_left=max(0, OPTIONS_SYNC_SLOTS_PER_USER - len(all_options))
     )
 
 
-@router.get("/game-options/+all", response_model=list[OptionsSyncSlotInfo])
-async def get_game_options_sync_info_all(user: AuthUserDep, old_format: bool = False) -> list[OptionsSyncSlotInfo]:
-    all_options = await OptionsSync.filter(user=user)
-    ctx = OptionsTxtSerializationContext(keybinds_format="old" if old_format else "new")
-    return [
-        OptionsSyncSlotInfo(
-            name=options.name,
-            options=OptionsTxt(**options.settings).model_dump(exclude_none=True, context=ctx),
-        )
-        for options in all_options
-    ]
+@router.post("/game-options", status_code=204)
+async def create_game_options_sync_slot(user: AuthUserDep, data: CreateOptionsSyncSlot) -> None:
+    async with in_transaction():
+        if await OptionsSync.filter(user=user).count() >= OPTIONS_SYNC_SLOTS_PER_USER:
+            raise CustomBodyException(400, {"name": ["You dont have settings slots left"]})
+
+        options = {}
+        if data.clone is not None:
+            opts = await OptionsSync.get_or_none(user=user, name=data.clone)
+            if opts is not None:
+                options = opts.settings
+
+        if not await OptionsSync.filter(user=user, name=data.name).exists():
+            await OptionsSync.create(user=user, name=data.name, settings=options)
 
 
-@router.get("/game-options/{name}", response_model=dict[str, str])
+@router.delete("/game-options/{name}", status_code=204)
+async def delete_game_options_sync_slot(user: AuthUserDep, name: str) -> None:
+    await OptionsSync.filter(user=user, name=name).delete()
+
+
+@router.get("/game-options/{name}", response_model=dict[str, Any])
 async def get_game_options(user: AuthUserDep, name: str, old_format: bool = False):
     options = await OptionsSync.get_or_none(user=user, name=name)
     if options is None:
@@ -385,10 +401,9 @@ async def get_game_options(user: AuthUserDep, name: str, old_format: bool = Fals
 
 @router.post("/game-options/{name}", status_code=204)
 async def save_game_options(user: AuthUserDep, name: str, data: OptionsTxt):
-    if not await OptionsSync.filter(user=user, name=name).exists() \
-            and await OptionsSync.filter(user=user).count() >= OPTIONS_SYNC_SLOTS_PER_USER:
-        raise CustomBodyException(400, {"name": ["You dont have settings slots left"]})
+    options = await OptionsSync.get_or_none(user=user, name=name)
+    if options is None:
+        raise CustomBodyException(404, {"name": ["Unknown options slot."]})
 
-    options, _ = await OptionsSync.get_or_create(user=user, name=name)
     options.settings.update(data.model_dump(exclude_none=True))
     await options.save(update_fields=["settings"])
