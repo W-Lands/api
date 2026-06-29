@@ -1,303 +1,196 @@
-from enum import StrEnum
+from __future__ import annotations
+
+from enum import Enum
 from typing import Literal, Annotated
 
-from pydantic import BaseModel, Field, OnErrorOmit, ConfigDict
+from pydantic import BaseModel, Field, OnErrorOmit, ConfigDict, PlainSerializer
+from pydantic_core.core_schema import SerializationInfo
 from tortoise import Model, fields
 
 from wlands import models
 
 
-class Keybind(StrEnum):
-    NOT_BOUND = "key.keyboard.unknown"
-    MOUSE_BUTTON_LEFT = "key.mouse.left"
-    MOUSE_BUTTON_RIGHT = "key.mouse.right"
-    MOUSE_BUTTON_MIDDLE = "key.mouse.middle"
-    MOUSE_BUTTON_3 = "key.mouse.3"
-    MOUSE_BUTTON_4 = "key.mouse.4"
-    MOUSE_BUTTON_5 = "key.mouse.5"
-    MOUSE_BUTTON_6 = "key.mouse.6"
-    MOUSE_BUTTON_7 = "key.mouse.7"
-    MOUSE_BUTTON_8 = "key.mouse.8"
-    MOUSE_BUTTON_9 = "key.mouse.9"
-    MOUSE_BUTTON_10 = "key.mouse.10"
-    MOUSE_BUTTON_11 = "key.mouse.11"
-    MOUSE_BUTTON_12 = "key.mouse.12"
-    MOUSE_BUTTON_13 = "key.mouse.13"
-    MOUSE_BUTTON_14 = "key.mouse.14"
-    MOUSE_BUTTON_15 = "key.mouse.15"
-    MOUSE_BUTTON_16 = "key.mouse.16"
-    KEYBOARD_0 = "key.keyboard.0"
-    KEYBOARD_1 = "key.keyboard.1"
-    KEYBOARD_2 = "key.keyboard.2"
-    KEYBOARD_3 = "key.keyboard.3"
-    KEYBOARD_4 = "key.keyboard.4"
-    KEYBOARD_5 = "key.keyboard.5"
-    KEYBOARD_6 = "key.keyboard.6"
-    KEYBOARD_7 = "key.keyboard.7"
-    KEYBOARD_8 = "key.keyboard.8"
-    KEYBOARD_9 = "key.keyboard.9"
-    KEYBOARD_A = "key.keyboard.a"
-    KEYBOARD_B = "key.keyboard.b"
-    KEYBOARD_C = "key.keyboard.c"
-    KEYBOARD_D = "key.keyboard.d"
-    KEYBOARD_E = "key.keyboard.e"
-    KEYBOARD_F = "key.keyboard.f"
-    KEYBOARD_G = "key.keyboard.g"
-    KEYBOARD_H = "key.keyboard.h"
-    KEYBOARD_I = "key.keyboard.i"
-    KEYBOARD_J = "key.keyboard.j"
-    KEYBOARD_K = "key.keyboard.k"
-    KEYBOARD_L = "key.keyboard.l"
-    KEYBOARD_M = "key.keyboard.m"
-    KEYBOARD_N = "key.keyboard.n"
-    KEYBOARD_O = "key.keyboard.o"
-    KEYBOARD_P = "key.keyboard.p"
-    KEYBOARD_Q = "key.keyboard.q"
-    KEYBOARD_R = "key.keyboard.r"
-    KEYBOARD_S = "key.keyboard.s"
-    KEYBOARD_T = "key.keyboard.t"
-    KEYBOARD_U = "key.keyboard.u"
-    KEYBOARD_V = "key.keyboard.v"
-    KEYBOARD_W = "key.keyboard.w"
-    KEYBOARD_X = "key.keyboard.x"
-    KEYBOARD_Y = "key.keyboard.y"
-    KEYBOARD_Z = "key.keyboard.z"
-    KEYBOARD_F1 = "key.keyboard.f1"
-    KEYBOARD_F2 = "key.keyboard.f2"
-    KEYBOARD_F3 = "key.keyboard.f3"
-    KEYBOARD_F4 = "key.keyboard.f4"
-    KEYBOARD_F5 = "key.keyboard.f5"
-    KEYBOARD_F6 = "key.keyboard.f6"
-    KEYBOARD_F7 = "key.keyboard.f7"
-    KEYBOARD_F8 = "key.keyboard.f8"
-    KEYBOARD_F9 = "key.keyboard.f9"
-    KEYBOARD_F10 = "key.keyboard.f10"
-    KEYBOARD_F11 = "key.keyboard.f11"
-    KEYBOARD_F12 = "key.keyboard.f12"
-    KEYBOARD_F13 = "key.keyboard.f13"
-    KEYBOARD_F14 = "key.keyboard.f14"
-    KEYBOARD_F15 = "key.keyboard.f15"
-    KEYBOARD_F16 = "key.keyboard.f16"
-    KEYBOARD_F17 = "key.keyboard.f17"
-    KEYBOARD_F18 = "key.keyboard.f18"
-    KEYBOARD_F19 = "key.keyboard.f19"
-    KEYBOARD_F20 = "key.keyboard.f20"
-    KEYBOARD_F21 = "key.keyboard.f21"
-    KEYBOARD_F22 = "key.keyboard.f22"
-    KEYBOARD_F23 = "key.keyboard.f23"
-    KEYBOARD_F24 = "key.keyboard.f24"
-    KEYBOARD_F25 = "key.keyboard.f25"
-    KEYBOARD_NUMLOCK = "key.keyboard.num.lock"
-    KEYBOARD_KEYPAD_0 = "key.keyboard.keypad.0"
-    KEYBOARD_KEYPAD_1 = "key.keyboard.keypad.1"
-    KEYBOARD_KEYPAD_2 = "key.keyboard.keypad.2"
-    KEYBOARD_KEYPAD_3 = "key.keyboard.keypad.3"
-    KEYBOARD_KEYPAD_4 = "key.keyboard.keypad.4"
-    KEYBOARD_KEYPAD_5 = "key.keyboard.keypad.5"
-    KEYBOARD_KEYPAD_6 = "key.keyboard.keypad.6"
-    KEYBOARD_KEYPAD_7 = "key.keyboard.keypad.7"
-    KEYBOARD_KEYPAD_8 = "key.keyboard.keypad.8"
-    KEYBOARD_KEYPAD_9 = "key.keyboard.keypad.9"
-    KEYBOARD_KEYPAD_ADD = "key.keyboard.keypad.add"
-    KEYBOARD_KEYPAD_DECIMAL = "key.keyboard.keypad.decimal"
-    KEYBOARD_KEYPAD_ENTER = "key.keyboard.keypad.enter"
-    KEYBOARD_KEYPAD_EQUAL = "key.keyboard.keypad.equal"
-    KEYBOARD_KEYPAD_MULTIPLY = "key.keyboard.keypad.multiply"
-    KEYBOARD_KEYPAD_DIVIDE = "key.keyboard.keypad.divide"
-    KEYBOARD_KEYPAD_SUBTRACT = "key.keyboard.keypad.subtract"
-    KEYBOARD_ARROW_DOWN = "key.keyboard.down"
-    KEYBOARD_ARROW_LEFT = "key.keyboard.left"
-    KEYBOARD_ARROW_RIGHT = "key.keyboard.right"
-    KEYBOARD_ARROW_UP = "key.keyboard.up"
-    KEYBOARD_APOSTROPHE = "key.keyboard.apostrophe"
-    KEYBOARD_BACKSLASH = "key.keyboard.backslash"
-    KEYBOARD_COMMA = "key.keyboard.comma"
-    KEYBOARD_EQUAL = "key.keyboard.equal"
-    KEYBOARD_GRAVE_ACCENT = "key.keyboard.grave.accent"
-    KEYBOARD_LEFT_BRACKET = "key.keyboard.left.bracket"
-    KEYBOARD_MINUS = "key.keyboard.minus"
-    KEYBOARD_PERIOD = "key.keyboard.period"
-    KEYBOARD_RIGHT_BRACKET = "key.keyboard.right.bracket"
-    KEYBOARD_SEMICOLON = "key.keyboard.semicolon"
-    KEYBOARD_SLASH = "key.keyboard.slash"
-    KEYBOARD_SPACE = "key.keyboard.space"
-    KEYBOARD_TAB = "key.keyboard.tab"
-    KEYBOARD_LEFT_ALT = "key.keyboard.left.alt"
-    KEYBOARD_LEFT_CONTROL = "key.keyboard.left.control"
-    KEYBOARD_LEFT_SHIFT = "key.keyboard.left.shift"
-    KEYBOARD_LEFT_WIN = "key.keyboard.left.win"
-    KEYBOARD_RIGHT_ALT = "key.keyboard.right.alt"
-    KEYBOARD_RIGHT_CONTROL = "key.keyboard.right.control"
-    KEYBOARD_RIGHT_SHIFT = "key.keyboard.right.shift"
-    KEYBOARD_RIGHT_WIN = "key.keyboard.right.win"
-    KEYBOARD_ENTER = "key.keyboard.enter"
-    KEYBOARD_ESCAPE = "key.keyboard.escape"
-    KEYBOARD_BACKSPACE = "key.keyboard.backspace"
-    KEYBOARD_DELETE = "key.keyboard.delete"
-    KEYBOARD_END = "key.keyboard.end"
-    KEYBOARD_HOME = "key.keyboard.home"
-    KEYBOARD_INSERT = "key.keyboard.insert"
-    KEYBOARD_PAGE_DOWN = "key.keyboard.page.down"
-    KEYBOARD_PAGE_UP = "key.keyboard.page.up"
-    KEYBOARD_CAPS_LOCK = "key.keyboard.caps.lock"
-    KEYBOARD_PAUSE = "key.keyboard.pause"
-    KEYBOARD_SCROLL_LOCK = "key.keyboard.scroll.lock"
-    KEYBOARD_MENU = "key.keyboard.menu"
-    PRINT_SCREEN = "key.keyboard.print.screen"
-    WORLD_1 = "key.keyboard.world.1"
-    WORLD_2 = "key.keyboard.world.2"
+# https://github.com/FlintMC/FlintMC/blob/09e47975b04bc26198835d55964369e12a7ee882/render/gui/src/main/java/net/flintmc/render/gui/input/Key.java#L7
+class Keybind(Enum):
+    NOT_BOUND = -1, "key.keyboard.unknown"
+    MOUSE_BUTTON_LEFT = -100, "key.mouse.left"
+    MOUSE_BUTTON_RIGHT = -99, "key.mouse.right"
+    MOUSE_BUTTON_MIDDLE = -98, "key.mouse.middle"
+    MOUSE_BUTTON_3 = None, "key.mouse.3"
+    MOUSE_BUTTON_4 = -97, "key.mouse.4"
+    MOUSE_BUTTON_5 = -96, "key.mouse.5"
+    MOUSE_BUTTON_6 = -95, "key.mouse.6"
+    MOUSE_BUTTON_7 = -94, "key.mouse.7"
+    MOUSE_BUTTON_8 = -93, "key.mouse.8"
+    KEYBOARD_0 = 11, "key.keyboard.0"
+    KEYBOARD_1 = 2, "key.keyboard.1"
+    KEYBOARD_2 = 3, "key.keyboard.2"
+    KEYBOARD_3 = 4, "key.keyboard.3"
+    KEYBOARD_4 = 5, "key.keyboard.4"
+    KEYBOARD_5 = 6, "key.keyboard.5"
+    KEYBOARD_6 = 7, "key.keyboard.6"
+    KEYBOARD_7 = 8, "key.keyboard.7"
+    KEYBOARD_8 = 9, "key.keyboard.8"
+    KEYBOARD_9 = 10, "key.keyboard.9"
+    KEYBOARD_A = 30, "key.keyboard.a"
+    KEYBOARD_B = 48, "key.keyboard.b"
+    KEYBOARD_C = 46, "key.keyboard.c"
+    KEYBOARD_D = 32, "key.keyboard.d"
+    KEYBOARD_E = 18, "key.keyboard.e"
+    KEYBOARD_F = 33, "key.keyboard.f"
+    KEYBOARD_G = 34, "key.keyboard.g"
+    KEYBOARD_H = 35, "key.keyboard.h"
+    KEYBOARD_I = 23, "key.keyboard.i"
+    KEYBOARD_J = 36, "key.keyboard.j"
+    KEYBOARD_K = 37, "key.keyboard.k"
+    KEYBOARD_L = 38, "key.keyboard.l"
+    KEYBOARD_M = 50, "key.keyboard.m"
+    KEYBOARD_N = 49, "key.keyboard.n"
+    KEYBOARD_O = 24, "key.keyboard.o"
+    KEYBOARD_P = 25, "key.keyboard.p"
+    KEYBOARD_Q = 16, "key.keyboard.q"
+    KEYBOARD_R = 19, "key.keyboard.r"
+    KEYBOARD_S = 31, "key.keyboard.s"
+    KEYBOARD_T = 20, "key.keyboard.t"
+    KEYBOARD_U = 22, "key.keyboard.u"
+    KEYBOARD_V = 47, "key.keyboard.v"
+    KEYBOARD_W = 17, "key.keyboard.w"
+    KEYBOARD_X = 45, "key.keyboard.x"
+    KEYBOARD_Y = 21, "key.keyboard.y"
+    KEYBOARD_Z = 44, "key.keyboard.z"
+    KEYBOARD_F1 = 59, "key.keyboard.f1"
+    KEYBOARD_F2 = 60, "key.keyboard.f2"
+    KEYBOARD_F3 = 61, "key.keyboard.f3"
+    KEYBOARD_F4 = 62, "key.keyboard.f4"
+    KEYBOARD_F5 = 63, "key.keyboard.f5"
+    KEYBOARD_F6 = 64, "key.keyboard.f6"
+    KEYBOARD_F7 = 65, "key.keyboard.f7"
+    KEYBOARD_F8 = 66, "key.keyboard.f8"
+    KEYBOARD_F9 = 67, "key.keyboard.f9"
+    KEYBOARD_F10 = 68, "key.keyboard.f10"
+    KEYBOARD_F11 = 87, "key.keyboard.f11"
+    KEYBOARD_F12 = 88, "key.keyboard.f12"
+    KEYBOARD_F13 = 100, "key.keyboard.f13"
+    KEYBOARD_F14 = 101, "key.keyboard.f14"
+    KEYBOARD_F15 = 102, "key.keyboard.f15"
+    KEYBOARD_F16 = 103, "key.keyboard.f16"
+    KEYBOARD_F17 = 104, "key.keyboard.f17"
+    KEYBOARD_F18 = 105, "key.keyboard.f18"
+    KEYBOARD_F19 = 113, "key.keyboard.f19"
+    KEYBOARD_F20 = None, "key.keyboard.f20"
+    KEYBOARD_F21 = None, "key.keyboard.f21"
+    KEYBOARD_F22 = None, "key.keyboard.f22"
+    KEYBOARD_F23 = None, "key.keyboard.f23"
+    KEYBOARD_F24 = None, "key.keyboard.f24"
+    KEYBOARD_F25 = None, "key.keyboard.f25"
+    KEYBOARD_NUMLOCK = 69, "key.keyboard.num.lock"
+    KEYBOARD_KEYPAD_0 = 82, "key.keyboard.keypad.0"
+    KEYBOARD_KEYPAD_1 = 79, "key.keyboard.keypad.1"
+    KEYBOARD_KEYPAD_2 = 80, "key.keyboard.keypad.2"
+    KEYBOARD_KEYPAD_3 = 81, "key.keyboard.keypad.3"
+    KEYBOARD_KEYPAD_4 = 75, "key.keyboard.keypad.4"
+    KEYBOARD_KEYPAD_5 = 76, "key.keyboard.keypad.5"
+    KEYBOARD_KEYPAD_6 = 77, "key.keyboard.keypad.6"
+    KEYBOARD_KEYPAD_7 = 71, "key.keyboard.keypad.7"
+    KEYBOARD_KEYPAD_8 = 72, "key.keyboard.keypad.8"
+    KEYBOARD_KEYPAD_9 = 73, "key.keyboard.keypad.9"
+    KEYBOARD_KEYPAD_ADD = 78, "key.keyboard.keypad.add"
+    KEYBOARD_KEYPAD_DECIMAL = 83, "key.keyboard.keypad.decimal"
+    KEYBOARD_KEYPAD_ENTER = 156, "key.keyboard.keypad.enter"
+    KEYBOARD_KEYPAD_EQUAL = 141, "key.keyboard.keypad.equal"
+    KEYBOARD_KEYPAD_MULTIPLY = 55, "key.keyboard.keypad.multiply"
+    KEYBOARD_KEYPAD_DIVIDE = 181, "key.keyboard.keypad.divide"
+    KEYBOARD_KEYPAD_SUBTRACT = 74, "key.keyboard.keypad.subtract"
+    KEYBOARD_ARROW_DOWN = 208, "key.keyboard.down"
+    KEYBOARD_ARROW_LEFT = 203, "key.keyboard.left"
+    KEYBOARD_ARROW_RIGHT = 205, "key.keyboard.right"
+    KEYBOARD_ARROW_UP = 200, "key.keyboard.up"
+    KEYBOARD_APOSTROPHE = 40, "key.keyboard.apostrophe"
+    KEYBOARD_BACKSLASH = 43, "key.keyboard.backslash"
+    KEYBOARD_COMMA = 51, "key.keyboard.comma"
+    KEYBOARD_EQUAL = 13, "key.keyboard.equal"
+    KEYBOARD_GRAVE_ACCENT = 41, "key.keyboard.grave.accent"
+    KEYBOARD_LEFT_BRACKET = 26, "key.keyboard.left.bracket"
+    KEYBOARD_MINUS = 12, "key.keyboard.minus"
+    KEYBOARD_PERIOD = 52, "key.keyboard.period"
+    KEYBOARD_RIGHT_BRACKET = 27, "key.keyboard.right.bracket"
+    KEYBOARD_SEMICOLON = 39, "key.keyboard.semicolon"
+    KEYBOARD_SLASH = 53, "key.keyboard.slash"
+    KEYBOARD_SPACE = 57, "key.keyboard.space"
+    KEYBOARD_TAB = 15, "key.keyboard.tab"
+    KEYBOARD_LEFT_ALT = 56, "key.keyboard.left.alt"
+    KEYBOARD_LEFT_CONTROL = 29, "key.keyboard.left.control"
+    KEYBOARD_LEFT_SHIFT = 42, "key.keyboard.left.shift"
+    KEYBOARD_LEFT_WIN = 219, "key.keyboard.left.win"
+    KEYBOARD_RIGHT_ALT = 184, "key.keyboard.right.alt"
+    KEYBOARD_RIGHT_CONTROL = 157, "key.keyboard.right.control"
+    KEYBOARD_RIGHT_SHIFT = 54, "key.keyboard.right.shift"
+    KEYBOARD_RIGHT_WIN = 220, "key.keyboard.right.win"
+    KEYBOARD_ENTER = 28, "key.keyboard.enter"
+    KEYBOARD_ESCAPE = 1, "key.keyboard.escape"
+    KEYBOARD_BACKSPACE = 14, "key.keyboard.backspace"
+    KEYBOARD_DELETE = 211, "key.keyboard.delete"
+    KEYBOARD_END = 207, "key.keyboard.end"
+    KEYBOARD_HOME = 199, "key.keyboard.home"
+    KEYBOARD_INSERT = 210, "key.keyboard.insert"
+    KEYBOARD_PAGE_DOWN = 209, "key.keyboard.page.down"
+    KEYBOARD_PAGE_UP = 201, "key.keyboard.page.up"
+    KEYBOARD_CAPS_LOCK = 58, "key.keyboard.caps.lock"
+    KEYBOARD_PAUSE = None, "key.keyboard.pause"
+    KEYBOARD_SCROLL_LOCK = 70, "key.keyboard.scroll.lock"
+    KEYBOARD_MENU = None, "key.keyboard.menu"
+    PRINT_SCREEN = None, "key.keyboard.print.screen"
+    WORLD_1 = None, "key.keyboard.world.1"
+    WORLD_2 = None, "key.keyboard.world.2"
+
+    _by_any_value: dict[int | str, Keybind]
+
+    def __new__(cls, old_val: int | None, new_val: str) -> Keybind:
+        if not hasattr(cls, "_by_any_value"):
+            cls._by_any_value = {}
+        obj = object.__new__(cls)
+        obj._value_ = (old_val, new_val)
+        cls._by_any_value[new_val] = obj
+        if old_val is not None:
+            cls._by_any_value[old_val] = obj
+        return obj
+
+    @property
+    def old(self) -> int | None:
+        return self._value_[0]
+
+    @property
+    def new(self) -> str:
+        return self._value_[1]
+
+    @classmethod
+    def _missing_(cls, value: int | str) -> Keybind | None:
+        return cls._by_any_value.get(value)
 
 
-KEYCODE_OLD_TO_KEYBIND = {
-    -100: Keybind.MOUSE_BUTTON_LEFT,
-    -99: Keybind.MOUSE_BUTTON_RIGHT,
-    -98: Keybind.MOUSE_BUTTON_MIDDLE,
-    -97: Keybind.MOUSE_BUTTON_3,
-    -96: Keybind.MOUSE_BUTTON_4,
-    -95: Keybind.MOUSE_BUTTON_5,
-    -94: Keybind.MOUSE_BUTTON_6,
-    -93: Keybind.MOUSE_BUTTON_7,
-    -92: Keybind.MOUSE_BUTTON_8,
-    -91: Keybind.MOUSE_BUTTON_9,
-    -90: Keybind.MOUSE_BUTTON_10,
-    -89: Keybind.MOUSE_BUTTON_11,
-    -88: Keybind.MOUSE_BUTTON_12,
-    -87: Keybind.MOUSE_BUTTON_13,
-    -86: Keybind.MOUSE_BUTTON_14,
-    -85: Keybind.MOUSE_BUTTON_15,
+class OptionsTxtSerializationContext(BaseModel):
+    keybinds_format: Literal["old", "new"]
 
-    0: Keybind.NOT_BOUND,
-    1: Keybind.KEYBOARD_ESCAPE,
-    2: Keybind.KEYBOARD_1,
-    3: Keybind.KEYBOARD_2,
-    4: Keybind.KEYBOARD_3,
-    5: Keybind.KEYBOARD_4,
-    6: Keybind.KEYBOARD_5,
-    7: Keybind.KEYBOARD_6,
-    8: Keybind.KEYBOARD_7,
-    9: Keybind.KEYBOARD_8,
-    10: Keybind.KEYBOARD_9,
-    11: Keybind.KEYBOARD_0,
-    12: Keybind.KEYBOARD_MINUS,
-    13: Keybind.KEYBOARD_EQUAL,
-    14: Keybind.KEYBOARD_BACKSPACE,
-    15: Keybind.KEYBOARD_TAB,
-    16: Keybind.KEYBOARD_Q,
-    17: Keybind.KEYBOARD_W,
-    18: Keybind.KEYBOARD_E,
-    19: Keybind.KEYBOARD_R,
-    20: Keybind.KEYBOARD_T,
-    21: Keybind.KEYBOARD_Y,
-    22: Keybind.KEYBOARD_U,
-    23: Keybind.KEYBOARD_I,
-    24: Keybind.KEYBOARD_O,
-    25: Keybind.KEYBOARD_P,
-    26: Keybind.KEYBOARD_LEFT_BRACKET,
-    27: Keybind.KEYBOARD_RIGHT_BRACKET,
-    28: Keybind.KEYBOARD_ENTER,
-    29: Keybind.KEYBOARD_LEFT_CONTROL,
-    30: Keybind.KEYBOARD_A,
-    31: Keybind.KEYBOARD_S,
-    32: Keybind.KEYBOARD_D,
-    33: Keybind.KEYBOARD_F,
-    34: Keybind.KEYBOARD_G,
-    35: Keybind.KEYBOARD_H,
-    36: Keybind.KEYBOARD_J,
-    37: Keybind.KEYBOARD_K,
-    38: Keybind.KEYBOARD_L,
-    39: Keybind.KEYBOARD_SEMICOLON,
-    40: Keybind.KEYBOARD_APOSTROPHE,
-    41: Keybind.KEYBOARD_GRAVE_ACCENT,
-    42: Keybind.KEYBOARD_LEFT_SHIFT,
-    43: Keybind.KEYBOARD_BACKSLASH,
-    44: Keybind.KEYBOARD_Z,
-    45: Keybind.KEYBOARD_X,
-    46: Keybind.KEYBOARD_C,
-    47: Keybind.KEYBOARD_V,
-    48: Keybind.KEYBOARD_B,
-    49: Keybind.KEYBOARD_N,
-    50: Keybind.KEYBOARD_M,
-    51: Keybind.KEYBOARD_COMMA,
-    52: Keybind.KEYBOARD_PERIOD,
-    53: Keybind.KEYBOARD_SLASH,
-    54: Keybind.KEYBOARD_RIGHT_SHIFT,
-    55: Keybind.KEYBOARD_KEYPAD_MULTIPLY,
-    56: Keybind.KEYBOARD_LEFT_ALT,
-    57: Keybind.KEYBOARD_SPACE,
-    58: Keybind.KEYBOARD_CAPS_LOCK,
-    59: Keybind.KEYBOARD_F1,
-    60: Keybind.KEYBOARD_F2,
-    61: Keybind.KEYBOARD_F3,
-    62: Keybind.KEYBOARD_F4,
-    63: Keybind.KEYBOARD_F5,
-    64: Keybind.KEYBOARD_F6,
-    65: Keybind.KEYBOARD_F7,
-    66: Keybind.KEYBOARD_F8,
-    67: Keybind.KEYBOARD_F9,
-    68: Keybind.KEYBOARD_F10,
-    69: Keybind.KEYBOARD_NUMLOCK,
-    70: Keybind.KEYBOARD_SCROLL_LOCK,
-    71: Keybind.KEYBOARD_KEYPAD_7,
-    72: Keybind.KEYBOARD_KEYPAD_8,
-    73: Keybind.KEYBOARD_KEYPAD_9,
-    74: Keybind.KEYBOARD_KEYPAD_SUBTRACT,
-    75: Keybind.KEYBOARD_KEYPAD_4,
-    76: Keybind.KEYBOARD_KEYPAD_5,
-    77: Keybind.KEYBOARD_KEYPAD_6,
-    78: Keybind.KEYBOARD_KEYPAD_ADD,
-    79: Keybind.KEYBOARD_KEYPAD_1,
-    80: Keybind.KEYBOARD_KEYPAD_2,
-    81: Keybind.KEYBOARD_KEYPAD_3,
-    82: Keybind.KEYBOARD_KEYPAD_0,
-    83: Keybind.KEYBOARD_KEYPAD_DECIMAL,
-    87: Keybind.KEYBOARD_F11,
-    88: Keybind.KEYBOARD_F12,
-    100: Keybind.KEYBOARD_F13,
-    101: Keybind.KEYBOARD_F14,
-    102: Keybind.KEYBOARD_F15,
-    112: None,
-    121: None,
-    123: None,
-    125: None,
-    141: None,
-    144: None,
-    145: None,
-    146: None,
-    147: None,
-    148: None,
-    149: None,
-    150: None,
-    151: None,
-    156: Keybind.KEYBOARD_KEYPAD_ENTER,
-    157: Keybind.KEYBOARD_RIGHT_CONTROL,
-    179: Keybind.KEYBOARD_COMMA,
-    181: Keybind.KEYBOARD_KEYPAD_DIVIDE,
-    183: Keybind.PRINT_SCREEN,
-    184: Keybind.KEYBOARD_RIGHT_ALT,
-    197: Keybind.KEYBOARD_PAUSE,
-    199: Keybind.KEYBOARD_HOME,
-    200: Keybind.KEYBOARD_ARROW_UP,
-    201: Keybind.KEYBOARD_PAGE_UP,
-    203: Keybind.KEYBOARD_ARROW_LEFT,
-    205: Keybind.KEYBOARD_ARROW_RIGHT,
-    207: Keybind.KEYBOARD_END,
-    208: Keybind.KEYBOARD_ARROW_DOWN,
-    209: Keybind.KEYBOARD_PAGE_DOWN,
-    210: Keybind.KEYBOARD_INSERT,
-    211: Keybind.KEYBOARD_DELETE,
-    219: Keybind.KEYBOARD_LEFT_WIN,
-    220: Keybind.KEYBOARD_RIGHT_WIN,
-    221: None,
-    222: None,
-    223: None,
-}
+
+def _keybinds_serializer(value: Keybind | None, info: SerializationInfo) -> int | str | None:
+    if value is None:
+        return None
+
+    ctx = info.context
+    if ctx is None or not isinstance(ctx, OptionsTxtSerializationContext):
+        return value.new
+
+    if ctx.keybinds_format == "old":
+        return value.old
+
+    return value.new
 
 
 OptBool = OnErrorOmit[bool | None]
 OptFloat = OnErrorOmit[float | None]
 OptInt = OnErrorOmit[int | None]
 OptStr = OnErrorOmit[str | None]
-OptKeybind = OnErrorOmit[Keybind | None]
+OptKeybind = OnErrorOmit[Annotated[Keybind | None, PlainSerializer(_keybinds_serializer)]]
 
 
 class OptionsTxt(BaseModel):
@@ -344,7 +237,7 @@ class OptionsTxt(BaseModel):
     smooth_lighting: OptBool = Field(None, alias="ao")
     chunk_updates: OptInt = Field(None, alias="prioritizeChunkUpdates", le=2, ge=0)
     biome_blend_radius: OptInt = Field(None, alias="biomeBlendRadius", le=7, ge=0)
-    render_clouds: OnErrorOmit[Literal["true", "false", "fast"] | None] = Field(None, alias="renderClouds")
+    render_clouds: OnErrorOmit[Literal["\"true\"", "\"false\"", "\"fast\""] | None] = Field(None, alias="renderClouds")
     last_server: OptStr = Field(None, alias="lastServer", max_length=64)
     lang: OptStr = Field(None, alias="lang", max_length=16)
     chat_visibility: OptInt = Field(None, alias="chatVisibility", le=2, ge=0)
@@ -359,7 +252,7 @@ class OptionsTxt(BaseModel):
     chat_scale: OptFloat = Field(None, alias="chatScale", le=1.0, ge=0.0)
     chat_width: OptFloat = Field(None, alias="chatWidth", le=1.0, ge=0.0)
     mipmap_levels: OptInt = Field(None, alias="mipmapLevels", le=4, ge=0)
-    main_hand: OnErrorOmit[Literal["left", "right"] | None] = Field(None, alias="mainHand")
+    main_hand: OnErrorOmit[Literal["\"left\"", "\"right\""] | None] = Field(None, alias="mainHand")
     attack_indicator: OptInt = Field(None, alias="attackIndicator", le=2, ge=0)
     narrator: OptInt = Field(None, alias="narrator", le=3, ge=0)
     mouse_wheel_sensitivity: OptFloat = Field(None, alias="mouseWheelSensitivity", le=10.0, ge=1.0)

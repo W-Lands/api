@@ -111,3 +111,8 @@ class CapeInfo(BaseModel):
 class OptionsSyncInfo(BaseModel):
     slots: list[str]
     slots_left: int
+
+
+class OptionsSyncSlotInfo(BaseModel):
+    name: str
+    options: dict[str, str]

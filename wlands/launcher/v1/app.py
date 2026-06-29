@@ -19,8 +19,10 @@ from wlands.models import User, GameSession, GameProfile, ProfileFile, LauncherA
 from .dependencies import AuthUserOptDep, AuthUserDep, AuthSessExpDep
 from .request_models import LoginData, TokenRefreshData, PatchUserData
 from .response_models import AuthResponse, SessionExpirationResponse, UserInfoResponse, ProfileInfo, ProfileFileInfo, \
-    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo, OptionsSyncInfo
+    LauncherUpdateInfo, LauncherAnnouncementInfo, AuthlibAgentResponse, ProfileIpInfo, CapeInfo, OptionsSyncInfo, \
+    OptionsSyncSlotInfo
 from .utils import Mfa, get_image_from_b64, reencode_png
+from ...models.options_sync import OptionsTxtSerializationContext
 
 router = APIRouter()
 
@@ -358,15 +360,27 @@ async def get_game_options_sync_info(user: AuthUserDep) -> OptionsSyncInfo:
     )
 
 
-@router.get("/game-options/{name}", response_model=OptionsTxt, response_model_exclude_none=True)
-async def get_game_options(user: AuthUserDep, name: str):
+@router.get("/game-options/+all", response_model=list[OptionsSyncSlotInfo])
+async def get_game_options_sync_info_all(user: AuthUserDep, old_format: bool = False) -> list[OptionsSyncSlotInfo]:
+    all_options = await OptionsSync.filter(user=user)
+    ctx = OptionsTxtSerializationContext(keybinds_format="old" if old_format else "new")
+    return [
+        OptionsSyncSlotInfo(
+            name=options.name,
+            options=OptionsTxt(**options.settings).model_dump(exclude_none=True, context=ctx),
+        )
+        for options in all_options
+    ]
+
+
+@router.get("/game-options/{name}", response_model=dict[str, str])
+async def get_game_options(user: AuthUserDep, name: str, old_format: bool = False):
     options = await OptionsSync.get_or_none(user=user, name=name)
     if options is None:
         raise CustomBodyException(404, {"name": ["Unknown options slot."]})
 
-    # TODO: support returning pre-1.13 keybinds
-
-    return options.settings
+    ctx = OptionsTxtSerializationContext(keybinds_format="old" if old_format else "new")
+    return OptionsTxt(**options.settings).model_dump(exclude_none=True, context=ctx)
 
 
 @router.post("/game-options/{name}", status_code=204)
@@ -374,8 +388,6 @@ async def save_game_options(user: AuthUserDep, name: str, data: OptionsTxt):
     if not await OptionsSync.filter(user=user, name=name).exists() \
             and await OptionsSync.filter(user=user).count() >= OPTIONS_SYNC_SLOTS_PER_USER:
         raise CustomBodyException(400, {"name": ["You dont have settings slots left"]})
-
-    # TODO: check all "key.*" fields and migrate ints to Keybind enum
 
     options, _ = await OptionsSync.get_or_create(user=user, name=name)
     options.settings.update(data.model_dump(exclude_none=True))
