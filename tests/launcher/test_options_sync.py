@@ -103,3 +103,40 @@ async def test_merge_settings(client: AsyncClient) -> None:
         "soundCategory_master": 0.5,
         "soundCategory_music": 0.75,
     }
+
+
+@pytest.mark.asyncio
+async def test_options_sync_keybinds(client: AsyncClient) -> None:
+    user = await User.create(email=TEST_EMAIL, nickname=TEST_NICKNAME, password=TEST_PASSWORD_HASH)
+    session = await GameSession.create(user=user)
+    auth = TokenAuth(session.make_token())
+
+    response = await client.post("/launcher/v1/game-options", auth=auth, json={"name": "test-slot"})
+    assert response.status_code == 204
+
+    response = await client.post("/launcher/v1/game-options/test-slot", auth=auth, json={
+        "key_key.attack": "key.mouse.left",
+        "key_key.use": -99,
+    })
+    assert response.status_code == 204
+
+    response = await client.get("/launcher/v1/game-options/test-slot", auth=auth)
+    assert response.status_code == 200
+    assert response.json() == {
+        "key_key.attack": "key.mouse.left",
+        "key_key.use": "key.mouse.right",
+    }
+
+    response = await client.get("/launcher/v1/game-options/test-slot", auth=auth, params={"old_format": False})
+    assert response.status_code == 200
+    assert response.json() == {
+        "key_key.attack": "key.mouse.left",
+        "key_key.use": "key.mouse.right",
+    }
+
+    response = await client.get("/launcher/v1/game-options/test-slot", auth=auth, params={"old_format": True})
+    assert response.status_code == 200
+    assert response.json() == {
+        "key_key.attack": -100,
+        "key_key.use": -99,
+    }
